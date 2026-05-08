@@ -118,6 +118,19 @@ async function fetchText(url) {
   return res.text();
 }
 
+async function fetchJson(url) {
+  const res = await fetch(url, {
+    headers: {
+      "Accept": "application/json",
+      "User-Agent": "GIR-Discover",
+    },
+  });
+  if (!res.ok) {
+    throw new Error(`${url} ${res.status}: ${await res.text()}`);
+  }
+  return res.json();
+}
+
 function uniqueFullNamesFromText(text) {
   const names = [];
   const seen = new Set();
@@ -246,6 +259,54 @@ async function repoRankBucket(config) {
 }
 
 async function gitRepoTrendBucket(config) {
+  try {
+    const json = await fetchJson("https://gitrepotrend.com/api/init");
+    const buckets = [];
+    const seen = new Set();
+    for (const [tag, repos] of Object.entries(json?.data || {})) {
+      if (!Array.isArray(repos) || !repos.length) continue;
+      const bucket = [];
+      let rank = 0;
+      for (const row of repos) {
+        if (bucket.length >= config.per_page) break;
+        const fullName = row.fullName || row.full_name;
+        if (!looksLikeGithubFullName(fullName) || seen.has(fullName)) continue;
+        seen.add(fullName);
+        rank++;
+        const sourceScore = Number(row.attentionRaw || row.attentionScore || 0);
+        bucket.push({
+          id: Number(row.id) || row.id,
+          name: row.name || fullName.split("/")[1],
+          full_name: fullName,
+          html_url: row.url || `https://github.com/${fullName}`,
+          description: row.description || "",
+          stargazers_count: Number(row.stars || row.stargazers_count || 0),
+          forks_count: Number(row.forks || row.forks_count || 0),
+          watchers_count: Number(row.watchers || row.watchers_count || row.stars || 0),
+          open_issues_count: Number(row.openIssues || row.open_issues_count || 0),
+          language: row.language || "",
+          topics: Array.isArray(row.topics) ? row.topics : [],
+          pushed_at: row.updatedAt || row.updated_at || null,
+          created_at: row.createdAt || row.created_at || null,
+          archived: false,
+          disabled: false,
+          fork: Boolean(row.isFork),
+          source_platform: "gitrepotrend",
+          source_tag: tag,
+          source_rank: rank,
+          source_score: sourceScore || scoreRepo({
+            pushed_at: row.updatedAt || row.updated_at,
+            stargazers_count: row.stars,
+            forks_count: row.forks,
+          }),
+        });
+      }
+      if (bucket.length) buckets.push(bucket);
+    }
+    if (buckets.length) return buckets;
+  } catch (error) {
+    console.warn(`GitRepoTrend API failed: ${error.message}; falling back to page scan`);
+  }
   const text = await fetchText("https://gitrepotrend.com/");
   return hydrateCandidates(uniqueFullNamesFromText(text), "gitrepotrend", "attention", config.per_page);
 }
@@ -384,8 +445,8 @@ async function searchProjects(config) {
 
   return selected.map((repo, index) => ({
     ...repo,
-    source_rank: index + 1,
-    source_score: scoreRepo(repo),
+    source_rank: repo.source_rank || index + 1,
+    source_score: repo.source_score || scoreRepo(repo),
   }));
 }
 
