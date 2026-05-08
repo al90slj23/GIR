@@ -50,6 +50,7 @@ jobs:
           upload public/assets/app.css assets/app.css
 
           upload admin/index.php admin/index.php
+          upload admin/projects.php admin/projects.php
           upload admin/settings.php admin/settings.php
 
           upload api/install_schema.php api/install_schema.php
