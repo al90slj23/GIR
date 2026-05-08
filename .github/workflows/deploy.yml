@@ -56,6 +56,7 @@ jobs:
 
           upload api/discover_config.php api/discover_config.php
           upload api/install_schema.php api/install_schema.php
+          upload api/project_history.php api/project_history.php
           upload api/receive_projects.php api/receive_projects.php
           upload api/trigger_run.php api/trigger_run.php
 

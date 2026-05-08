@@ -70,12 +70,17 @@ $reportMigrations = [
     'source_tag' => "ALTER TABLE project_reports ADD COLUMN source_tag VARCHAR(64) NOT NULL DEFAULT '综合' AFTER source_platform",
     'source_rank' => "ALTER TABLE project_reports ADD COLUMN source_rank INT UNSIGNED NOT NULL DEFAULT 0 AFTER source_tag",
     'source_score' => "ALTER TABLE project_reports ADD COLUMN source_score DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER source_rank",
+    'raw_rank_only' => "ALTER TABLE project_reports ADD COLUMN raw_rank_only TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER source_score",
     'maturity_score' => "ALTER TABLE project_reports ADD COLUMN maturity_score TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER useful_score",
+    'change_note' => "ALTER TABLE project_reports ADD COLUMN change_note TEXT AFTER risks",
 ];
 foreach ($reportMigrations as $column => $statement) {
     if (!isset($existingReportColumns[$column]) && !db()->query($statement)) {
         $errors[] = db()->error;
     }
+}
+if (!isset($existingReportColumns['raw_rank_only']) && !db()->query("UPDATE project_reports SET raw_rank_only = 1 WHERE one_sentence = ''")) {
+    $errors[] = db()->error;
 }
 
 $reportIndexRows = db_all('SHOW INDEX FROM project_reports');
@@ -93,6 +98,10 @@ if (isset($existingReportIndexes['uniq_project_period']) && !db()->query('ALTER 
     $errors[] = db()->error;
     unset($existingReportIndexes['uniq_project_period']);
 }
+if (isset($existingReportIndexes['uniq_project_period_source']) && !db()->query('ALTER TABLE project_reports DROP INDEX uniq_project_period_source')) {
+    $errors[] = db()->error;
+    unset($existingReportIndexes['uniq_project_period_source']);
+}
 
 $idxScoresColumns = $existingReportIndexColumns['idx_scores'] ?? [];
 ksort($idxScoresColumns);
@@ -105,9 +114,10 @@ if (isset($existingReportIndexes['idx_scores']) && implode(',', $idxScoresColumn
 }
 
 $reportIndexes = [
-    'uniq_project_period_source' => 'ALTER TABLE project_reports ADD UNIQUE KEY uniq_project_period_source (project_id, period_type, report_date, source_platform, source_tag)',
+    'idx_project_period_source' => 'ALTER TABLE project_reports ADD INDEX idx_project_period_source (project_id, period_type, report_date, source_platform, source_tag)',
     'idx_source' => 'ALTER TABLE project_reports ADD INDEX idx_source (source_platform, source_tag)',
     'idx_source_rank' => 'ALTER TABLE project_reports ADD INDEX idx_source_rank (source_platform, source_tag, source_rank)',
+    'idx_raw_rank' => 'ALTER TABLE project_reports ADD INDEX idx_raw_rank (raw_rank_only, one_sentence)',
     'idx_scores' => 'ALTER TABLE project_reports ADD INDEX idx_scores (useful_score, maturity_score, play_score)',
 ];
 foreach ($reportIndexes as $index => $statement) {

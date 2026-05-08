@@ -50,6 +50,10 @@ render_header($project['full_name']);
         <span class="score">难度 <?= h($report['difficulty']) ?></span>
     </div>
     <p class="desc"><?= h($report['one_sentence']) ?></p>
+    <?php if (!empty($report['change_note'])): ?>
+    <h2>变化观察</h2>
+    <div class="text-block"><?= h($report['change_note']) ?></div>
+    <?php endif; ?>
     <h2>中文总结</h2>
     <div class="text-block"><?= h($report['summary_zh']) ?></div>
     <h2>可借鉴点</h2>

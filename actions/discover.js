@@ -62,6 +62,13 @@ function deriveConfigUrl() {
   return "";
 }
 
+function deriveHistoryUrl() {
+  if (/\/api\/receive_projects\.php($|\?)/.test(env.ingestUrl)) {
+    return env.ingestUrl.replace(/\/api\/receive_projects\.php($|\?.*)/, "/api/project_history.php");
+  }
+  return "";
+}
+
 async function loadDiscoverConfig() {
   const url = deriveConfigUrl();
   if (!url) return defaultConfig;
@@ -513,9 +520,26 @@ function systemPrompt() {
   ].join("\n");
 }
 
-function userPrompt(repo, readme) {
+function compactHistory(history) {
+  return history.map((item) => ({
+    date: item.report_date,
+    source: `${item.source_platform || ""}/${item.source_tag || ""}`,
+    one_sentence: item.one_sentence || "",
+    change_note: item.change_note || "",
+    summary: item.summary_zh || "",
+    recommendation: item.recommendation || "",
+    scores: {
+      play: Number(item.play_score || 0),
+      useful: Number(item.useful_score || 0),
+      maturity: Number(item.maturity_score || 0),
+      difficulty: item.difficulty || "",
+    },
+  }));
+}
+
+function userPrompt(repo, readme, history = []) {
   return JSON.stringify({
-    task: "分析这个 GitHub 项目是否值得关注，以及是否适合改造成轻量 PHP 虚拟主机项目。",
+    task: "为这次榜单命中生成一条新的中文解说。即使历史里已经分析过同一个项目，也不要复用旧文案；请结合最近几次解说，判断这次是否有新功能、热度变化、定位变化或值得重新关注的原因。",
     required_schema: {
       one_sentence: "一句话介绍",
       project_type: "工具/框架/游戏/Agent/UI/后端/数据集/其他",
@@ -529,6 +553,7 @@ function userPrompt(repo, readme) {
       is_suitable_for_this_host: true,
       ideas_to_reuse: ["可借鉴点"],
       risks: ["风险点"],
+      change_note: "结合 previous_analyses 写出本次相对最近几次解说的变化观察；如果没有明显变化，也要说明没有明显变化以及本次仍值得或不值得关注的原因",
       recommendation: "收藏/研究/可复刻/暂不关注",
       summary_zh: "中文总结",
     },
@@ -541,11 +566,37 @@ function userPrompt(repo, readme) {
       topics: repo.topics || [],
       html_url: repo.html_url,
     },
+    previous_analyses: compactHistory(history).slice(0, 5),
     readme,
   });
 }
 
-async function analyze(repo, readme) {
+async function fetchProjectHistory(fullName) {
+  const url = deriveHistoryUrl();
+  if (!url) return [];
+  try {
+    const res = await fetchWithTimeout(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${env.ingestToken}`,
+        "User-Agent": "GIR-Discover",
+      },
+      body: JSON.stringify({ full_name: fullName, limit: 5 }),
+    }, 30000);
+    if (!res.ok) {
+      console.warn(`History ${fullName} ${res.status}: ${await res.text()}`);
+      return [];
+    }
+    const data = await res.json();
+    return Array.isArray(data.reports) ? data.reports : [];
+  } catch (error) {
+    console.warn(`History ${fullName} failed: ${error.message}`);
+    return [];
+  }
+}
+
+async function analyze(repo, readme, history = []) {
   const res = await fetchWithTimeout(`${env.deepseekBaseUrl.replace(/\/$/, "")}/v1/chat/completions`, {
     method: "POST",
     headers: {
@@ -558,7 +609,7 @@ async function analyze(repo, readme) {
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: systemPrompt() },
-        { role: "user", content: userPrompt(repo, readme) },
+        { role: "user", content: userPrompt(repo, readme, history) },
       ],
     }),
   }, 90000);
@@ -642,16 +693,12 @@ async function main() {
   const repos = config.analyze_all ? rankingCandidates : selectProjectsFromBuckets(buckets, config);
   let analyzedCount = 0;
   let analyzedBatch = [];
-  const analysisCache = new Map();
   for (const repo of repos) {
     console.log(`Analyzing ${repo.full_name}`);
     try {
-      let analysis = analysisCache.get(repo.full_name);
-      if (!analysis) {
-        const readme = await getReadme(repo);
-        analysis = await analyze(repo, readme);
-        analysisCache.set(repo.full_name, analysis);
-      }
+      const history = await fetchProjectHistory(repo.full_name);
+      const readme = await getReadme(repo);
+      const analysis = await analyze(repo, readme, history);
       analyzedBatch.push(projectPayload(repo, analysis));
       analyzedCount++;
       if (analyzedBatch.length >= 20) {
