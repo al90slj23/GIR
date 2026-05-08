@@ -73,6 +73,71 @@ function update_app_setting(string $key, string $value): bool
     );
 }
 
+function github_trigger_configured(): bool
+{
+    global $config;
+    return $config['github']['owner'] !== ''
+        && $config['github']['repo'] !== ''
+        && $config['github']['token'] !== ''
+        && $config['github']['workflow'] !== '';
+}
+
+function trigger_github_discover(string $runType): array
+{
+    global $config;
+
+    if (!in_array($runType, ['daily', 'weekly', 'manual'], true)) {
+        $runType = 'daily';
+    }
+
+    if (!github_trigger_configured()) {
+        return ['ok' => false, 'error' => 'github_dispatch_not_configured'];
+    }
+
+    $body = json_encode([
+        'ref' => 'main',
+        'inputs' => [
+            'run_type' => $runType,
+        ],
+    ], JSON_UNESCAPED_UNICODE);
+
+    $url = 'https://api.github.com/repos/' . rawurlencode($config['github']['owner']) . '/' . rawurlencode($config['github']['repo'])
+        . '/actions/workflows/' . rawurlencode($config['github']['workflow']) . '/dispatches';
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CUSTOMREQUEST => 'POST',
+        CURLOPT_POSTFIELDS => $body,
+        CURLOPT_USERAGENT => 'GIR Admin Trigger',
+        CURLOPT_HTTPHEADER => [
+            'Accept: application/vnd.github+json',
+            'Content-Type: application/json',
+            'Authorization: Bearer ' . $config['github']['token'],
+            'X-GitHub-Api-Version: 2022-11-28',
+        ],
+        CURLOPT_TIMEOUT => 20,
+        CURLOPT_CONNECTTIMEOUT => 8,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => 0,
+    ]);
+
+    $response = curl_exec($ch);
+    $errno = curl_errno($ch);
+    $error = curl_error($ch);
+    $http = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($errno) {
+        return ['ok' => false, 'error' => 'curl_error: ' . $error];
+    }
+    if ($http < 200 || $http >= 300) {
+        return ['ok' => false, 'error' => 'github_dispatch_failed: HTTP ' . $http . ' ' . truncate_text((string) $response, 300)];
+    }
+
+    return ['ok' => true];
+}
+
 function upsert_project(array $item): int
 {
     $now = date('Y-m-d H:i:s');

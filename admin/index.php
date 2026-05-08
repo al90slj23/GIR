@@ -4,7 +4,21 @@ require_once dirname(__DIR__) . '/public/_layout.php';
 
 require_admin();
 
+$triggerMessage = '';
+$triggerError = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['trigger_discover'])) {
+    $runType = isset($_POST['run_type']) ? (string) $_POST['run_type'] : 'daily';
+    $result = trigger_github_discover($runType);
+    if (!empty($result['ok'])) {
+        $triggerMessage = '已提交 GitHub Actions 更新任务。';
+    } else {
+        $triggerError = isset($result['error']) ? (string) $result['error'] : '触发失败';
+    }
+}
+
 $runs = recent_runs(30);
+$canTrigger = github_trigger_configured();
 
 render_header('后台');
 ?>
@@ -17,8 +31,24 @@ render_header('后台');
 
 <section class="panel">
     <h2>手动触发</h2>
-    <p class="muted">后台鉴权已启用。下一步可以把这里接到 GitHub workflow_dispatch。</p>
-    <button class="button" type="button" disabled>等待接入手动触发</button>
+    <p class="muted">从后台触发 GitHub Actions，抓取并分析最新项目。</p>
+    <?php if ($triggerMessage): ?>
+        <div class="notice success"><?= h($triggerMessage) ?></div>
+    <?php elseif ($triggerError): ?>
+        <div class="notice error"><?= h($triggerError) ?></div>
+    <?php endif; ?>
+    <?php if ($canTrigger): ?>
+        <form method="post" class="inline-form">
+            <select name="run_type">
+                <option value="daily">今日榜</option>
+                <option value="weekly">本周榜</option>
+                <option value="manual">手动测试</option>
+            </select>
+            <button class="button" type="submit" name="trigger_discover" value="1">立即更新</button>
+        </form>
+    <?php else: ?>
+        <div class="empty">GitHub 触发配置未完成。需要在虚拟主机 Data/.env 配置 GITHUB_OWNER、GITHUB_REPO、GITHUB_TOKEN、GITHUB_WORKFLOW。</div>
+    <?php endif; ?>
 </section>
 
 <section class="panel">

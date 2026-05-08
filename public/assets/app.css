@@ -92,6 +92,15 @@ textarea {
   font: inherit;
   resize: vertical;
 }
+select {
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: #1f2933;
+  font: inherit;
+  background: #fff;
+}
+.inline-form { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .empty { background: #fff; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 28px; color: #667085; text-align: center; }
 @media (max-width: 720px) {
   .topbar-inner, .page-head { align-items: flex-start; flex-direction: column; }
