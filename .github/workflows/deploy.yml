@@ -42,6 +42,7 @@ jobs:
           upload public/assets/app.css assets/app.css
 
           upload admin/index.php admin/index.php
+          upload admin/x.php admin/x.php
 
           upload api/install_schema.php api/install_schema.php
           upload api/receive_projects.php api/receive_projects.php

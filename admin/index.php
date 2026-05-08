@@ -20,6 +20,12 @@ render_header('后台');
 </section>
 
 <section class="panel">
+    <h2>服务器探针</h2>
+    <p class="muted">X Prober 已移入后台路径，访问时需要输入后台 token。</p>
+    <a class="button" href="/admin/x.php">打开 X Prober</a>
+</section>
+
+<section class="panel">
     <h2>运行记录</h2>
     <?php if (!$runs): ?>
         <div class="empty">暂无运行记录。</div>

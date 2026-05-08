@@ -1,5 +1,59 @@
 <?php
 namespace InnStudio\Prober\Components\PreDefine;
+function gir_xprober_env_value($key, $default = '')
+{
+    static $values = null;
+    if ($values === null) {
+        $values = [];
+        $paths = [
+            \dirname(\dirname(__DIR__)) . '/Data/.env',
+            \dirname(__DIR__) . '/Data/.env',
+            \dirname(__DIR__) . '/.env',
+            __DIR__ . '/.env',
+        ];
+        foreach ($paths as $path) {
+            if (!\is_file($path)) {
+                continue;
+            }
+            foreach (\file($path, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES) ?: [] as $line) {
+                $line = \trim($line);
+                if ($line === '' || $line[0] === '#') {
+                    continue;
+                }
+                $pos = \strpos($line, '=');
+                if ($pos === false) {
+                    continue;
+                }
+                $values[\trim(\substr($line, 0, $pos))] = \trim(\substr($line, $pos + 1));
+            }
+            break;
+        }
+    }
+    return \array_key_exists($key, $values) ? $values[$key] : $default;
+}
+function gir_xprober_token()
+{
+    $header = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+    if (\stripos($header, 'Bearer ') === 0) {
+        return \trim(\substr($header, 7));
+    }
+    if (isset($_POST['token'])) {
+        return (string) $_POST['token'];
+    }
+    if (isset($_GET['token'])) {
+        return (string) $_GET['token'];
+    }
+    return isset($_COOKIE['gir_admin_token']) ? (string) $_COOKIE['gir_admin_token'] : '';
+}
+$expectedToken = gir_xprober_env_value('APP_ADMIN_TOKEN', gir_xprober_env_value('APP_TRIGGER_TOKEN', ''));
+$providedToken = gir_xprober_token();
+if ($expectedToken === '' || $expectedToken === 'change_me' || !\hash_equals($expectedToken, $providedToken)) {
+    \http_response_code(403);
+    \header('Content-Type: text/html; charset=utf-8');
+    echo '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>X Prober 鉴权</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:40px;color:#111}form{max-width:360px}input,button{font:inherit;padding:10px;margin-top:10px;width:100%;box-sizing:border-box}button{cursor:pointer}</style></head><body><h1>X Prober 鉴权</h1><p>请输入后台 token 后继续访问。</p><form method="post"><input name="token" type="password" autocomplete="current-password" autofocus><button type="submit">进入</button></form></body></html>';
+    exit;
+}
+\setcookie('gir_admin_token', $expectedToken, \time() + 3600, '/admin/', '', false, true);
 $version = phpversion();
 version_compare($version, '5.4.0','<') && exit("PHP 5.4+ is required. Currently installed version is: {$version}");
 \define('XPROBER_TIMER', \microtime(true));
