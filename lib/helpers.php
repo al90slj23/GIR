@@ -16,7 +16,10 @@ function json_response(array $payload, int $status = 200): void
 
 function request_json(): array
 {
-    $raw = file_get_contents('php://input');
+    $raw = isset($_POST['payload']) ? (string) $_POST['payload'] : '';
+    if ($raw === '') {
+        $raw = file_get_contents('php://input');
+    }
     if ($raw === false || trim($raw) === '') {
         json_response(['ok' => false, 'error' => 'empty_body'], 400);
     }

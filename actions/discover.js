@@ -1,6 +1,7 @@
 const runType = process.env.RUN_TYPE || process.argv[2] || "daily";
 const periodType = runType === "weekly" ? "weekly" : runType === "manual" ? "manual" : "daily";
 const maxProjects = Number(process.env.MAX_PROJECTS || "10");
+const ingestBatchSize = Math.max(1, Number(process.env.INGEST_BATCH_SIZE || "1"));
 
 const env = {
   githubToken: process.env.GITHUB_TOKEN || "",
@@ -151,26 +152,35 @@ async function analyze(repo, readme) {
   return JSON.parse(content);
 }
 
-async function ingest(projects) {
+async function ingestBatch(projects) {
   const payload = {
     run_type: runType,
     period_type: periodType,
     report_date: today,
     projects,
   };
+  const form = new URLSearchParams();
+  form.set("payload", JSON.stringify(payload));
+
   const res = await fetch(env.ingestUrl, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json",
+      "Content-Type": "application/x-www-form-urlencoded",
       "Authorization": `Bearer ${env.ingestToken}`,
     },
-    body: JSON.stringify(payload),
+    body: form.toString(),
   });
   const text = await res.text();
   if (!res.ok) {
     throw new Error(`Ingest ${res.status}: ${text}`);
   }
   console.log(text);
+}
+
+async function ingest(projects) {
+  for (let index = 0; index < projects.length; index += ingestBatchSize) {
+    await ingestBatch(projects.slice(index, index + ingestBatchSize));
+  }
 }
 
 function projectPayload(repo, analysis) {
