@@ -131,8 +131,8 @@ async function githubJson(url) {
 }
 
 async function searchProjects(config) {
-  const map = new Map();
   const specs = buildQuerySpecs(config);
+  const buckets = [];
   for (const spec of specs) {
     const url = new URL("https://api.github.com/search/repositories");
     url.searchParams.set("q", spec.query);
@@ -140,40 +140,51 @@ async function searchProjects(config) {
     url.searchParams.set("order", "desc");
     url.searchParams.set("per_page", String(config.per_page));
     const data = await githubJson(url.toString());
+    const bucket = [];
     let queryRank = 0;
     for (const repo of data.items || []) {
       if (repo.archived || repo.disabled || repo.fork) continue;
       queryRank++;
       const sourceScore = scoreRepo(repo);
-      if (!map.has(repo.full_name)) {
-        repo.source_platform = spec.platform;
-        repo.source_tag = spec.tag;
-        repo.source_rank = queryRank;
-        repo.source_score = sourceScore;
-        map.set(repo.full_name, repo);
-      } else {
-        const current = map.get(repo.full_name);
-        const currentTag = String(current.source_tag || "");
-        const shouldPreferSpecificTag = sourceScore === Number(current.source_score || 0)
-          && currentTag === "综合"
-          && spec.tag !== "综合";
-        if (sourceScore > Number(current.source_score || 0) || shouldPreferSpecificTag) {
-          current.source_platform = spec.platform;
-          current.source_tag = spec.tag;
-          current.source_rank = queryRank;
-          current.source_score = sourceScore;
-        }
-      }
+      bucket.push({
+        ...repo,
+        source_platform: spec.platform,
+        source_tag: spec.tag,
+        source_rank: queryRank,
+        source_score: sourceScore,
+      });
+    }
+    buckets.push(bucket);
+  }
+
+  const selected = [];
+  const seen = new Set();
+  for (let rank = 0; selected.length < config.max_projects && rank < config.per_page; rank++) {
+    for (const bucket of buckets) {
+      const repo = bucket[rank];
+      if (!repo || seen.has(repo.full_name)) continue;
+      seen.add(repo.full_name);
+      selected.push(repo);
+      if (selected.length >= config.max_projects) break;
     }
   }
-  return [...map.values()]
-    .sort((a, b) => scoreRepo(b) - scoreRepo(a))
-    .slice(0, config.max_projects)
-    .map((repo, index) => ({
-      ...repo,
-      source_rank: index + 1,
-      source_score: scoreRepo(repo),
-    }));
+
+  if (selected.length < config.max_projects) {
+    const remaining = buckets.flat()
+      .filter((repo) => !seen.has(repo.full_name))
+      .sort((a, b) => scoreRepo(b) - scoreRepo(a));
+    for (const repo of remaining) {
+      selected.push(repo);
+      seen.add(repo.full_name);
+      if (selected.length >= config.max_projects) break;
+    }
+  }
+
+  return selected.map((repo, index) => ({
+    ...repo,
+    source_rank: index + 1,
+    source_score: scoreRepo(repo),
+  }));
 }
 
 function scoreRepo(repo) {
