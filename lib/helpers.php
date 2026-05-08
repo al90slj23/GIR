@@ -14,6 +14,21 @@ function json_response(array $payload, int $status = 200): void
     exit;
 }
 
+function app_setting(string $key, string $default = ''): string
+{
+    static $settings = null;
+
+    if ($settings === null) {
+        $settings = [];
+        $rows = db_all('SELECT setting_key, setting_value FROM app_settings');
+        foreach ($rows as $row) {
+            $settings[(string) $row['setting_key']] = (string) $row['setting_value'];
+        }
+    }
+
+    return array_key_exists($key, $settings) && $settings[$key] !== '' ? $settings[$key] : $default;
+}
+
 function request_json(): array
 {
     $raw = isset($_POST['payload']) ? (string) $_POST['payload'] : '';

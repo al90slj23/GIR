@@ -66,3 +66,41 @@ CREATE TABLE IF NOT EXISTS runs (
   KEY idx_status (status),
   KEY idx_started_at (started_at)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+
+CREATE TABLE IF NOT EXISTS app_settings (
+  setting_key VARCHAR(64) NOT NULL,
+  setting_value TEXT,
+  description VARCHAR(255) NOT NULL DEFAULT '',
+  updated_at DATETIME NOT NULL,
+  PRIMARY KEY (setting_key)
+) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
+VALUES ('site_name', 'GIR · 灵猎雷达', '站点名称', NOW());
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
+VALUES ('nav_today_label', '今日榜', '今日榜导航文字', NOW());
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
+VALUES ('nav_weekly_label', '本周榜', '本周榜导航文字', NOW());
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
+VALUES ('nav_admin_label', '后台', '后台导航文字', NOW());
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
+VALUES ('daily_title', '今日 GitHub 灵感榜', '日报页面标题', NOW());
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
+VALUES ('daily_subtitle', '每天发现值得研究和学习的 GitHub 灵感项目。', '日报页面副标题', NOW());
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
+VALUES ('daily_empty_text', '还没有日报数据。完成 GitHub Actions 推送后，这里会显示灵感项目。', '日报空状态文案', NOW());
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
+VALUES ('weekly_title', '本周 GitHub 灵感榜', '周榜页面标题', NOW());
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
+VALUES ('weekly_subtitle', '按周聚合更值得研究、学习和复刻的 GitHub 灵感项目。', '周榜页面副标题', NOW());
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
+VALUES ('weekly_empty_text', '还没有周榜数据。', '周榜空状态文案', NOW());

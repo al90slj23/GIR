@@ -2,23 +2,24 @@
 function render_header(string $title): void
 {
     global $config;
+    $siteName = app_setting('site_name', $config['app']['name']);
     ?>
 <!doctype html>
 <html lang="zh-CN">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title><?= h($title) ?> - <?= h($config['app']['name']) ?></title>
+    <title><?= h($title) ?> - <?= h($siteName) ?></title>
     <link rel="stylesheet" href="/assets/app.css">
 </head>
 <body>
 <header class="topbar">
     <div class="topbar-inner">
-        <a class="brand" href="/index.php"><?= h($config['app']['name']) ?></a>
+        <a class="brand" href="/index.php"><?= h($siteName) ?></a>
         <nav class="nav">
-            <a href="/index.php">今日榜</a>
-            <a href="/weekly.php">本周榜</a>
-            <a href="/admin/index.php">后台</a>
+            <a href="/index.php"><?= h(app_setting('nav_today_label', '今日榜')) ?></a>
+            <a href="/weekly.php"><?= h(app_setting('nav_weekly_label', '本周榜')) ?></a>
+            <a href="/admin/index.php"><?= h(app_setting('nav_admin_label', '后台')) ?></a>
         </nav>
     </div>
 </header>

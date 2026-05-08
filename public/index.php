@@ -5,13 +5,14 @@ require_once (is_file(__DIR__ . '/_layout.php') ? __DIR__ . '/_layout.php' : __D
 $date = isset($_GET['date']) ? preg_replace('/[^0-9\-]/', '', (string) $_GET['date']) : '';
 $dates = recent_report_dates('daily', 14);
 $reports = $date ? reports_by_date('daily', $date, 30) : latest_reports('daily', 30);
+$pageTitle = app_setting('daily_title', '今日 GitHub 灵感榜');
 
-render_header('今日 GitHub 灵感榜');
+render_header($pageTitle);
 ?>
 <div class="page-head">
     <div>
-        <h1>今日 GitHub 灵感榜</h1>
-        <div class="muted">每天发现值得研究和学习的 GitHub 灵感项目。</div>
+        <h1><?= h($pageTitle) ?></h1>
+        <div class="muted"><?= h(app_setting('daily_subtitle', '每天发现值得研究和学习的 GitHub 灵感项目。')) ?></div>
     </div>
 </div>
 
@@ -24,7 +25,7 @@ render_header('今日 GitHub 灵感榜');
 <?php endif; ?>
 
 <?php if (!$reports): ?>
-    <div class="empty">还没有日报数据。完成 GitHub Actions 推送后，这里会显示灵感项目。</div>
+    <div class="empty"><?= h(app_setting('daily_empty_text', '还没有日报数据。完成 GitHub Actions 推送后，这里会显示灵感项目。')) ?></div>
 <?php else: ?>
     <div class="grid">
         <?php foreach ($reports as $row): ?>

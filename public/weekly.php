@@ -5,13 +5,14 @@ require_once (is_file(__DIR__ . '/_layout.php') ? __DIR__ . '/_layout.php' : __D
 $date = isset($_GET['date']) ? preg_replace('/[^0-9\-]/', '', (string) $_GET['date']) : '';
 $dates = recent_report_dates('weekly', 14);
 $reports = $date ? reports_by_date('weekly', $date, 40) : latest_reports('weekly', 40);
+$pageTitle = app_setting('weekly_title', '本周 GitHub 灵感榜');
 
-render_header('本周 GitHub 灵感榜');
+render_header($pageTitle);
 ?>
 <div class="page-head">
     <div>
-        <h1>本周 GitHub 灵感榜</h1>
-        <div class="muted">按周聚合更值得研究、学习和复刻的 GitHub 灵感项目。</div>
+        <h1><?= h($pageTitle) ?></h1>
+        <div class="muted"><?= h(app_setting('weekly_subtitle', '按周聚合更值得研究、学习和复刻的 GitHub 灵感项目。')) ?></div>
     </div>
 </div>
 
@@ -24,7 +25,7 @@ render_header('本周 GitHub 灵感榜');
 <?php endif; ?>
 
 <?php if (!$reports): ?>
-    <div class="empty">还没有周榜数据。</div>
+    <div class="empty"><?= h(app_setting('weekly_empty_text', '还没有周榜数据。')) ?></div>
 <?php else: ?>
     <div class="grid">
         <?php foreach ($reports as $row): ?>
