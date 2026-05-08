@@ -7,7 +7,7 @@ function latest_reports(string $periodType, int $limit = 20): array
         'SELECT r.*, p.name, p.full_name, p.html_url, p.description, p.stars, p.forks, p.language, p.topics, p.pushed_at
          FROM project_reports r
          INNER JOIN projects p ON p.id = r.project_id
-         WHERE r.period_type = ?
+         WHERE r.period_type = ? AND p.is_hidden = 0
          ORDER BY r.report_date DESC, r.php_fit_score DESC, r.useful_score DESC, p.stars DESC
          LIMIT ' . (int) $limit,
         [$periodType]
@@ -20,7 +20,7 @@ function reports_by_date(string $periodType, string $date, int $limit = 30): arr
         'SELECT r.*, p.name, p.full_name, p.html_url, p.description, p.stars, p.forks, p.language, p.topics, p.pushed_at
          FROM project_reports r
          INNER JOIN projects p ON p.id = r.project_id
-         WHERE r.period_type = ? AND r.report_date = ?
+         WHERE r.period_type = ? AND r.report_date = ? AND p.is_hidden = 0
          ORDER BY r.php_fit_score DESC, r.useful_score DESC, r.play_score DESC, p.stars DESC
          LIMIT ' . (int) $limit,
         [$periodType, $date]
@@ -31,8 +31,9 @@ function recent_report_dates(string $periodType, int $limit = 14): array
 {
     return db_all(
         'SELECT report_date, COUNT(*) AS total
-         FROM project_reports
-         WHERE period_type = ?
+         FROM project_reports r
+         INNER JOIN projects p ON p.id = r.project_id
+         WHERE period_type = ? AND p.is_hidden = 0
          GROUP BY report_date
          ORDER BY report_date DESC
          LIMIT ' . (int) $limit,
@@ -57,6 +58,96 @@ function recent_runs(int $limit = 20): array
 {
     return db_all(
         'SELECT * FROM runs ORDER BY started_at DESC, id DESC LIMIT ' . (int) $limit
+    );
+}
+
+function admin_project_statuses(): array
+{
+    return [
+        'new' => '新发现',
+        'saved' => '已收藏',
+        'researching' => '研究中',
+        'replicate' => '可复刻',
+        'ignored' => '不感兴趣',
+    ];
+}
+
+function normalize_admin_status(string $status): string
+{
+    $statuses = admin_project_statuses();
+    return isset($statuses[$status]) ? $status : 'new';
+}
+
+function admin_projects(array $filters, int $limit = 80): array
+{
+    $where = [];
+    $params = [];
+
+    $status = isset($filters['status']) ? (string) $filters['status'] : '';
+    if ($status !== '') {
+        $where[] = 'p.admin_status = ?';
+        $params[] = normalize_admin_status($status);
+    }
+
+    $visibility = isset($filters['visibility']) ? (string) $filters['visibility'] : '';
+    if ($visibility === 'visible') {
+        $where[] = 'p.is_hidden = 0';
+    } elseif ($visibility === 'hidden') {
+        $where[] = 'p.is_hidden = 1';
+    }
+
+    $language = isset($filters['language']) ? trim((string) $filters['language']) : '';
+    if ($language !== '') {
+        $where[] = 'p.language = ?';
+        $params[] = truncate_text($language, 64);
+    }
+
+    $recommendation = isset($filters['recommendation']) ? trim((string) $filters['recommendation']) : '';
+    if ($recommendation !== '') {
+        $where[] = 'r.recommendation = ?';
+        $params[] = truncate_text($recommendation, 32);
+    }
+
+    $keyword = isset($filters['q']) ? trim((string) $filters['q']) : '';
+    if ($keyword !== '') {
+        $where[] = '(p.full_name LIKE ? OR p.description LIKE ? OR r.summary_zh LIKE ?)';
+        $like = '%' . $keyword . '%';
+        $params[] = $like;
+        $params[] = $like;
+        $params[] = $like;
+    }
+
+    $sqlWhere = $where ? 'WHERE ' . implode(' AND ', $where) : '';
+    return db_all(
+        'SELECT p.*, r.id AS report_id, r.report_date, r.one_sentence, r.project_type, r.play_score,
+                r.useful_score, r.php_fit_score, r.difficulty, r.recommendation, r.summary_zh
+         FROM projects p
+         LEFT JOIN project_reports r ON r.id = (
+             SELECT rr.id FROM project_reports rr
+             WHERE rr.project_id = p.id
+             ORDER BY rr.report_date DESC, rr.id DESC
+             LIMIT 1
+         )
+         ' . $sqlWhere . '
+         ORDER BY p.is_hidden ASC, p.updated_at DESC, p.stars DESC
+         LIMIT ' . (int) $limit,
+        $params
+    );
+}
+
+function admin_project_filter_options(): array
+{
+    return [
+        'languages' => db_all("SELECT language, COUNT(*) AS total FROM projects WHERE language <> '' GROUP BY language ORDER BY total DESC, language ASC LIMIT 50"),
+        'recommendations' => db_all("SELECT recommendation, COUNT(*) AS total FROM project_reports WHERE recommendation <> '' GROUP BY recommendation ORDER BY total DESC, recommendation ASC LIMIT 20"),
+    ];
+}
+
+function update_project_admin(int $projectId, string $status, bool $hidden, string $note): bool
+{
+    return db_exec(
+        'UPDATE projects SET admin_status = ?, is_hidden = ?, admin_note = ?, updated_at = ? WHERE id = ?',
+        [normalize_admin_status($status), $hidden ? 1 : 0, truncate_text($note, 5000), date('Y-m-d H:i:s'), $projectId]
     );
 }
 

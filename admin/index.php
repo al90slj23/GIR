@@ -52,6 +52,12 @@ render_header('后台');
 </section>
 
 <section class="panel">
+    <h2>项目管理</h2>
+    <p class="muted">筛选已入库项目，设置收藏、研究状态、隐藏和管理员备注。</p>
+    <a class="button" href="/admin/projects.php">管理项目</a>
+</section>
+
+<section class="panel">
     <h2>站点设置</h2>
     <p class="muted">站点名称、导航文字和页面文案现在从数据库读取。</p>
     <a class="button" href="/admin/settings.php">编辑站点设置</a>

@@ -10,6 +10,9 @@ CREATE TABLE IF NOT EXISTS projects (
   language VARCHAR(64) NOT NULL DEFAULT '',
   topics TEXT,
   pushed_at DATETIME DEFAULT NULL,
+  is_hidden TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  admin_status VARCHAR(32) NOT NULL DEFAULT 'new',
+  admin_note TEXT,
   discovered_at DATETIME NOT NULL,
   created_at DATETIME NOT NULL,
   updated_at DATETIME NOT NULL,
@@ -17,6 +20,8 @@ CREATE TABLE IF NOT EXISTS projects (
   UNIQUE KEY uniq_full_name (full_name),
   KEY idx_stars (stars),
   KEY idx_language (language),
+  KEY idx_admin_status (admin_status),
+  KEY idx_is_hidden (is_hidden),
   KEY idx_discovered_at (discovered_at)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
 

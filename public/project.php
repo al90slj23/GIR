@@ -29,8 +29,16 @@ render_header($project['full_name']);
         <div class="detail"><div class="detail-label">Forks</div><div class="detail-value"><?= (int) $project['forks'] ?></div></div>
         <div class="detail"><div class="detail-label">语言</div><div class="detail-value"><?= h($project['language'] ?: '-') ?></div></div>
         <div class="detail"><div class="detail-label">最近推送</div><div class="detail-value"><?= h($project['pushed_at'] ?: '-') ?></div></div>
+        <div class="detail"><div class="detail-label">研究状态</div><div class="detail-value"><?= h(admin_project_statuses()[$project['admin_status']] ?? $project['admin_status']) ?></div></div>
     </div>
 </section>
+
+<?php if (!empty($project['admin_note'])): ?>
+<section class="panel">
+    <h2>管理员备注</h2>
+    <div class="text-block"><?= h($project['admin_note']) ?></div>
+</section>
+<?php endif; ?>
 
 <?php foreach ($project['reports'] as $report): ?>
 <section class="panel">
