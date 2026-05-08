@@ -46,6 +46,7 @@ render_header($project['full_name']);
     <div class="scores">
         <span class="score">可玩 <?= (int) $report['play_score'] ?>/10</span>
         <span class="score">实用 <?= (int) $report['useful_score'] ?>/10</span>
+        <span class="score">成熟 <?= display_maturity_score(array_merge($project, $report)) ?>/10</span>
         <span class="score">难度 <?= h($report['difficulty']) ?></span>
     </div>
     <p class="desc"><?= h($report['one_sentence']) ?></p>

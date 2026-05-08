@@ -107,7 +107,7 @@ function latest_reports(string $periodType, int $limit = 20, string $platform = 
          FROM project_reports r
          INNER JOIN projects p ON p.id = r.project_id
          WHERE r.period_type = ? AND p.is_hidden = 0' . analyzed_report_sql() . $filters['sql'] . '
-         ORDER BY r.report_date DESC, r.useful_score DESC, r.play_score DESC, p.stars DESC
+         ORDER BY r.report_date DESC, r.useful_score DESC, r.maturity_score DESC, r.play_score DESC, p.stars DESC
          LIMIT ' . (int) $limit,
         array_merge([$periodType], $filters['params'])
     );
@@ -135,7 +135,7 @@ function reports_by_date(string $periodType, string $date, int $limit = 30, stri
          FROM project_reports r
          INNER JOIN projects p ON p.id = r.project_id
          WHERE r.period_type = ? AND r.report_date = ? AND p.is_hidden = 0' . analyzed_report_sql() . $filters['sql'] . '
-         ORDER BY r.useful_score DESC, r.play_score DESC, p.stars DESC
+         ORDER BY r.useful_score DESC, r.maturity_score DESC, r.play_score DESC, p.stars DESC
          LIMIT ' . (int) $limit,
         array_merge([$periodType, $date], $filters['params'])
     );
@@ -263,7 +263,7 @@ function admin_projects(array $filters, int $limit = 80): array
     $sqlWhere = $where ? 'WHERE ' . implode(' AND ', $where) : '';
     return db_all(
         'SELECT p.*, r.id AS report_id, r.report_date, r.one_sentence, r.project_type, r.play_score,
-                r.useful_score, r.php_fit_score, r.difficulty, r.recommendation, r.summary_zh
+                r.useful_score, r.maturity_score, r.php_fit_score, r.difficulty, r.recommendation, r.summary_zh
          FROM projects p
          LEFT JOIN project_reports r ON r.id = (
              SELECT rr.id FROM project_reports rr
@@ -609,6 +609,7 @@ function upsert_report(int $projectId, ?int $runId, string $periodType, string $
         list_to_text($analysis['target_users'] ?? ''),
         clamp_score($analysis['play_score'] ?? 0),
         clamp_score($analysis['useful_score'] ?? 0),
+        clamp_score($analysis['maturity_score'] ?? 0),
         clamp_score($analysis['php_fit_score'] ?? 0),
         normalize_difficulty($analysis['difficulty'] ?? ''),
         !empty($analysis['is_suitable_for_this_host']) ? 1 : 0,
@@ -624,7 +625,7 @@ function upsert_report(int $projectId, ?int $runId, string $periodType, string $
         db_exec(
             'UPDATE project_reports
              SET run_id = ?, source_rank = ?, source_score = ?, one_sentence = ?, project_type = ?, problem_text = ?, tech_stack = ?, target_users = ?,
-                 play_score = ?, useful_score = ?, php_fit_score = ?, difficulty = ?, is_suitable_for_this_host = ?,
+                 play_score = ?, useful_score = ?, maturity_score = ?, php_fit_score = ?, difficulty = ?, is_suitable_for_this_host = ?,
                  ideas_to_reuse = ?, risks = ?, recommendation = ?, summary_zh = ?, raw_ai_json = ?
              WHERE id = ?',
             $params
@@ -638,9 +639,9 @@ function upsert_report(int $projectId, ?int $runId, string $periodType, string $
         'INSERT INTO project_reports
          (project_id, period_type, report_date, source_platform, source_tag, run_id, source_rank, source_score,
           one_sentence, project_type, problem_text, tech_stack, target_users,
-          play_score, useful_score, php_fit_score, difficulty, is_suitable_for_this_host, ideas_to_reuse, risks,
+          play_score, useful_score, maturity_score, php_fit_score, difficulty, is_suitable_for_this_host, ideas_to_reuse, risks,
           recommendation, summary_zh, raw_ai_json, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         $params
     );
 }

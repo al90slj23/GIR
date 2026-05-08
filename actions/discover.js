@@ -506,6 +506,10 @@ function systemPrompt() {
     "站长的部署环境是传统 PHP 7.2 + MySQL 5.1 虚拟主机，不能运行 Docker、Node/Python 常驻服务、本地模型或 WebSocket。",
     "你必须用中文输出严格 JSON，不要 Markdown，不要解释。",
     "评分为 1 到 10 的整数。",
+    "play_score 衡量项目是否有趣、是否值得点开体验、是否能带来灵感。",
+    "useful_score 衡量项目是否解决真实问题、是否有明确使用价值。",
+    "maturity_score 衡量项目成熟度，综合 Stars、Forks、最近更新、文档完整度和社区活跃度。",
+    "difficulty 衡量理解、部署、改造或复刻成本，只能输出 低、中、高。",
   ].join("\n");
 }
 
@@ -520,6 +524,7 @@ function userPrompt(repo, readme) {
       target_users: ["适合谁用"],
       play_score: "1-10",
       useful_score: "1-10",
+      maturity_score: "1-10，综合 Stars、Forks、最近更新、文档完整度、社区活跃度判断成熟度",
       difficulty: "低/中/高",
       is_suitable_for_this_host: true,
       ideas_to_reuse: ["可借鉴点"],

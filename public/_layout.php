@@ -51,6 +51,7 @@ function render_project_card(array $row): void
     <div class="scores">
         <span class="score">可玩 <?= (int) $row['play_score'] ?>/10</span>
         <span class="score">实用 <?= (int) $row['useful_score'] ?>/10</span>
+        <span class="score">成熟 <?= display_maturity_score($row) ?>/10</span>
         <span class="score">难度 <?= h($row['difficulty']) ?></span>
     </div>
     <div class="metrics">

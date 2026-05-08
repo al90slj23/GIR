@@ -83,3 +83,40 @@ function badge_class(string $recommendation): string
             return 'badge muted';
     }
 }
+
+function display_maturity_score(array $row): int
+{
+    $score = (int) ($row['maturity_score'] ?? 0);
+    if ($score > 0) {
+        return min(10, $score);
+    }
+
+    $stars = (int) ($row['stars'] ?? 0);
+    $forks = (int) ($row['forks'] ?? 0);
+    if ($stars >= 100000) {
+        $score = 10;
+    } elseif ($stars >= 50000) {
+        $score = 9;
+    } elseif ($stars >= 10000) {
+        $score = 8;
+    } elseif ($stars >= 5000) {
+        $score = 7;
+    } elseif ($stars >= 1000) {
+        $score = 6;
+    } elseif ($stars >= 500) {
+        $score = 5;
+    } elseif ($stars >= 100) {
+        $score = 4;
+    } elseif ($stars >= 20) {
+        $score = 3;
+    } elseif ($stars > 0) {
+        $score = 2;
+    } else {
+        $score = 1;
+    }
+
+    if ($forks >= 1000 && $score < 10) {
+        $score++;
+    }
+    return min(10, $score);
+}

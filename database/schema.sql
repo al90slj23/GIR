@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS project_reports (
   target_users TEXT,
   play_score TINYINT UNSIGNED NOT NULL DEFAULT 0,
   useful_score TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  maturity_score TINYINT UNSIGNED NOT NULL DEFAULT 0,
   php_fit_score TINYINT UNSIGNED NOT NULL DEFAULT 0,
   difficulty VARCHAR(16) NOT NULL DEFAULT '',
   is_suitable_for_this_host TINYINT UNSIGNED NOT NULL DEFAULT 0,
@@ -56,7 +57,7 @@ CREATE TABLE IF NOT EXISTS project_reports (
   KEY idx_report_date (report_date),
   KEY idx_source (source_platform, source_tag),
   KEY idx_source_rank (source_platform, source_tag, source_rank),
-  KEY idx_scores (php_fit_score, useful_score, play_score),
+  KEY idx_scores (useful_score, maturity_score, play_score),
   KEY idx_recommendation (recommendation)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
 
