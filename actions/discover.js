@@ -135,6 +135,16 @@ async function fetchJson(url) {
   return res.json();
 }
 
+async function fetchWithTimeout(url, options = {}, timeoutMs = 90000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function uniqueFullNamesFromText(text) {
   const names = [];
   const seen = new Set();
@@ -532,7 +542,7 @@ function userPrompt(repo, readme) {
 }
 
 async function analyze(repo, readme) {
-  const res = await fetch(`${env.deepseekBaseUrl.replace(/\/$/, "")}/v1/chat/completions`, {
+  const res = await fetchWithTimeout(`${env.deepseekBaseUrl.replace(/\/$/, "")}/v1/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -547,7 +557,7 @@ async function analyze(repo, readme) {
         { role: "user", content: userPrompt(repo, readme) },
       ],
     }),
-  });
+  }, 90000);
   if (!res.ok) {
     throw new Error(`DeepSeek ${res.status}: ${await res.text()}`);
   }
@@ -626,7 +636,8 @@ async function main() {
   }
 
   const repos = config.analyze_all ? rankingCandidates : selectProjectsFromBuckets(buckets, config);
-  const projects = [];
+  let analyzedCount = 0;
+  let analyzedBatch = [];
   const analysisCache = new Map();
   for (const repo of repos) {
     console.log(`Analyzing ${repo.full_name}`);
@@ -637,15 +648,22 @@ async function main() {
         analysis = await analyze(repo, readme);
         analysisCache.set(repo.full_name, analysis);
       }
-      projects.push(projectPayload(repo, analysis));
+      analyzedBatch.push(projectPayload(repo, analysis));
+      analyzedCount++;
+      if (analyzedBatch.length >= 20) {
+        await ingest(analyzedBatch, 20);
+        analyzedBatch = [];
+      }
     } catch (error) {
       console.error(`Failed ${repo.full_name}: ${error.message}`);
     }
   }
-  if (!projects.length) {
+  if (analyzedBatch.length) {
+    await ingest(analyzedBatch, 20);
+  }
+  if (!analyzedCount) {
     throw new Error("No projects analyzed");
   }
-  await ingest(projects);
 }
 
 main().catch((error) => {
