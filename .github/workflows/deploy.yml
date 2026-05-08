@@ -1,0 +1,58 @@
+name: Deploy to FTP
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Upload PHP site to FTP
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_WEB_DIR: ${{ secrets.FTP_WEB_DIR || 'Web' }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${FTP_HOST}" ] || [ -z "${FTP_USER}" ] || [ -z "${FTP_PASSWORD}" ]; then
+            echo "Missing FTP secrets" >&2
+            exit 1
+          fi
+
+          upload() {
+            local src="$1"
+            local dst="$2"
+            curl --fail --silent --show-error --ftp-pasv --ftp-create-dirs \
+              --user "${FTP_USER}:${FTP_PASSWORD}" \
+              --upload-file "${src}" \
+              "ftp://${FTP_HOST}/${FTP_WEB_DIR}/${dst}"
+          }
+
+          upload public/index.php index.php
+          upload public/weekly.php weekly.php
+          upload public/project.php project.php
+          upload public/_layout.php public/_layout.php
+          upload public/assets/app.css assets/app.css
+
+          upload admin/index.php admin/index.php
+
+          upload api/install_schema.php api/install_schema.php
+          upload api/receive_projects.php api/receive_projects.php
+          upload api/trigger_run.php api/trigger_run.php
+
+          upload config/config.php config/config.php
+
+          upload lib/auth.php lib/auth.php
+          upload lib/bootstrap.php lib/bootstrap.php
+          upload lib/db.php lib/db.php
+          upload lib/helpers.php lib/helpers.php
+          upload lib/repositories.php lib/repositories.php
+
+          upload database/schema.sql database/schema.sql

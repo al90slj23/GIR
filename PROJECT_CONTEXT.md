@@ -266,6 +266,14 @@ database/schema.sql
 actions/discover.js
 actions/package.json
 .github/workflows/discover.yml
+.github/workflows/deploy.yml
+```
+
+`deploy.yml`：
+
+```text
+push 到 main 或手动 workflow_dispatch 时，把 PHP 站点业务文件上传到 FTP Web/ 目录。
+不自动上传 .env、.netrc、x.php、mysql_probe.php。
 ```
 
 ### 数据库

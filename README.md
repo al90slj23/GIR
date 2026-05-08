@@ -60,3 +60,18 @@ docs/RESEARCH.md
 ```text
 .env.example
 ```
+
+## 自动部署
+
+代码推送到 GitHub `main` 分支后，`Deploy to FTP` workflow 会把 PHP 站点文件上传到虚拟主机 `Web/` 目录。
+
+需要在 GitHub Secrets 中配置：
+
+```text
+FTP_HOST
+FTP_USER
+FTP_PASSWORD
+FTP_WEB_DIR
+```
+
+探针文件 `x.php`、`mysql_probe.php` 不参与自动部署，只在需要诊断主机环境时手动上传。
