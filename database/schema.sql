@@ -123,6 +123,9 @@ INSERT IGNORE INTO app_settings (setting_key, setting_value, description, update
 VALUES ('discover_weekly_enabled', '1', '是否启用周榜自动采集', NOW());
 
 INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
+VALUES ('discover_analyze_all', '1', '是否让 DeepSeek 处理全部候选项目', NOW());
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
 VALUES ('discover_max_projects', '3', '每次最多分析项目数', NOW());
 
 INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)

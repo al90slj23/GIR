@@ -19,6 +19,7 @@ for (const [key, value] of Object.entries(env)) {
 }
 
 const defaultConfig = {
+  analyze_all: true,
   max_projects: Number(process.env.MAX_PROJECTS || "10"),
   per_page: 20,
   recent_days_daily: 3,
@@ -81,6 +82,7 @@ async function loadDiscoverConfig() {
     return {
       daily_enabled: config.daily_enabled !== false,
       weekly_enabled: config.weekly_enabled !== false,
+      analyze_all: config.analyze_all !== false,
       max_projects: clampNumber(config.max_projects, defaultConfig.max_projects, 1, 50),
       per_page: clampNumber(config.per_page, defaultConfig.per_page, 1, 100),
       recent_days_daily: clampNumber(config.recent_days_daily, defaultConfig.recent_days_daily, 1, 90),
@@ -623,13 +625,18 @@ async function main() {
     await ingest(rankingCandidates.map((repo) => projectPayload(repo, { raw_rank_only: true })), 50);
   }
 
-  const repos = selectProjectsFromBuckets(buckets, config);
+  const repos = config.analyze_all ? rankingCandidates : selectProjectsFromBuckets(buckets, config);
   const projects = [];
+  const analysisCache = new Map();
   for (const repo of repos) {
     console.log(`Analyzing ${repo.full_name}`);
     try {
-      const readme = await getReadme(repo);
-      const analysis = await analyze(repo, readme);
+      let analysis = analysisCache.get(repo.full_name);
+      if (!analysis) {
+        const readme = await getReadme(repo);
+        analysis = await analyze(repo, readme);
+        analysisCache.set(repo.full_name, analysis);
+      }
       projects.push(projectPayload(repo, analysis));
     } catch (error) {
       console.error(`Failed ${repo.full_name}: ${error.message}`);

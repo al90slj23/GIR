@@ -314,7 +314,8 @@ function discover_setting_definitions(): array
     return [
         'discover_daily_enabled' => ['label' => '启用日报自动采集', 'type' => 'checkbox', 'default' => '1'],
         'discover_weekly_enabled' => ['label' => '启用周榜自动采集', 'type' => 'checkbox', 'default' => '1'],
-        'discover_max_projects' => ['label' => '每次 DeepSeek 分析数量', 'type' => 'number', 'default' => '3'],
+        'discover_analyze_all' => ['label' => 'DeepSeek 处理全部候选', 'type' => 'checkbox', 'default' => '1'],
+        'discover_max_projects' => ['label' => 'DeepSeek 分析上限', 'type' => 'number', 'default' => '3'],
         'discover_per_page' => ['label' => '每个平台/分类候选数量', 'type' => 'number', 'default' => '20'],
         'discover_recent_days_daily' => ['label' => '日报 GitHub 搜索窗口', 'type' => 'number', 'default' => '3'],
         'discover_recent_days_weekly' => ['label' => '周榜 GitHub 搜索窗口', 'type' => 'number', 'default' => '14'],
@@ -449,6 +450,7 @@ function discover_public_config(): array
     return [
         'daily_enabled' => discover_bool_setting('discover_daily_enabled', true),
         'weekly_enabled' => discover_bool_setting('discover_weekly_enabled', true),
+        'analyze_all' => discover_bool_setting('discover_analyze_all', true),
         'max_projects' => discover_int_setting('discover_max_projects', 3, 1, 50),
         'per_page' => discover_int_setting('discover_per_page', 20, 1, 100),
         'recent_days_daily' => discover_int_setting('discover_recent_days_daily', 3, 1, 90),

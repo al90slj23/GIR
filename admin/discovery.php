@@ -96,6 +96,6 @@ render_header('采集设置');
 
 <section class="panel">
     <h2>搜索语句说明</h2>
-    <div class="text-block">分类 key、平台 key 和源站路径保留原始英文，前台菜单会显示中文名称。固定 GitHub Search 分类为：综合、新项目、ai、llm、agent、php。额外搜索语句每行一条，例如：language:PHP stars:&gt;20 pushed:&gt;{since}。{since} 会替换成当前日报或周榜的起始日期。自动触发时间由 GitHub Actions workflow 控制；后台关闭某个周期后，对应定时任务会跳过采集。</div>
+    <div class="text-block">分类 key、平台 key 和源站路径保留原始英文，前台菜单会显示中文名称。固定 GitHub Search 分类为：综合、新项目、ai、llm、agent、php。开启“DeepSeek 处理全部候选”后，本轮抓到的所有候选都会补齐中文解读；关闭后才使用“DeepSeek 分析上限”。额外搜索语句每行一条，例如：language:PHP stars:&gt;20 pushed:&gt;{since}。{since} 会替换成当前日报或周榜的起始日期。自动触发时间由 GitHub Actions workflow 控制；后台关闭某个周期后，对应定时任务会跳过采集。</div>
 </section>
 <?php render_footer(); ?>
