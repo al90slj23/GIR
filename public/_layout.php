@@ -3,7 +3,11 @@ function render_header(string $title): void
 {
     global $config;
     $siteName = app_setting('site_name', $config['app']['name']);
-    $assetVersion = is_file(__DIR__ . '/assets/app.css') ? (string) filemtime(__DIR__ . '/assets/app.css') : '1';
+    $assetPath = rtrim((string) ($_SERVER['DOCUMENT_ROOT'] ?? ''), '/\\') . '/assets/app.css';
+    if ($assetPath === '/assets/app.css' || !is_file($assetPath)) {
+        $assetPath = __DIR__ . '/assets/app.css';
+    }
+    $assetVersion = is_file($assetPath) ? (string) filemtime($assetPath) : '1';
     ?>
 <!doctype html>
 <html lang="zh-CN">
