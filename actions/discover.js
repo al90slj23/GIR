@@ -160,7 +160,7 @@ async function ingestBatch(projects) {
     projects,
   };
   const form = new URLSearchParams();
-  form.set("payload", JSON.stringify(payload));
+  form.set("payload_b64", Buffer.from(JSON.stringify(payload), "utf8").toString("base64"));
 
   const res = await fetch(env.ingestUrl, {
     method: "POST",

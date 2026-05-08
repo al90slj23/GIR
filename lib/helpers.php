@@ -31,7 +31,14 @@ function app_setting(string $key, string $default = ''): string
 
 function request_json(): array
 {
-    $raw = isset($_POST['payload']) ? (string) $_POST['payload'] : '';
+    $raw = '';
+    if (isset($_POST['payload_b64'])) {
+        $decoded = base64_decode((string) $_POST['payload_b64'], true);
+        $raw = is_string($decoded) ? $decoded : '';
+    }
+    if ($raw === '' && isset($_POST['payload'])) {
+        $raw = (string) $_POST['payload'];
+    }
     if ($raw === '') {
         $raw = file_get_contents('php://input');
     }
