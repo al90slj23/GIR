@@ -304,9 +304,24 @@ async function searchProjects(config) {
 
   const selected = [];
   const seen = new Set();
+  const consumed = new Map();
+
+  for (const bucket of buckets) {
+    for (let index = 0; index < bucket.length; index++) {
+      const repo = bucket[index];
+      if (!repo || seen.has(repo.full_name)) continue;
+      seen.add(repo.full_name);
+      selected.push(repo);
+      consumed.set(bucket, index + 1);
+      break;
+    }
+    if (selected.length >= config.max_projects) break;
+  }
+
   for (let rank = 0; selected.length < config.max_projects && rank < config.per_page; rank++) {
     for (const bucket of buckets) {
-      const repo = bucket[rank];
+      const offset = consumed.get(bucket) || 0;
+      const repo = bucket[rank + offset];
       if (!repo || seen.has(repo.full_name)) continue;
       seen.add(repo.full_name);
       selected.push(repo);
