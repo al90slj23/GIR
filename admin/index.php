@@ -52,6 +52,12 @@ render_header('后台');
 </section>
 
 <section class="panel">
+    <h2>虚拟主机管理</h2>
+    <p class="muted">一键打开三丰云虚拟主机控制台，管理当前站点空间、FTP 和数据库。</p>
+    <a class="button" href="https://www.sanfengyun.com/control/#/vhost/6398841" target="_blank" rel="noreferrer">打开虚拟主机管理</a>
+</section>
+
+<section class="panel">
     <h2>项目管理</h2>
     <p class="muted">筛选已入库项目，设置收藏、研究状态、隐藏和管理员备注。</p>
     <a class="button" href="/admin/projects.php">管理项目</a>
