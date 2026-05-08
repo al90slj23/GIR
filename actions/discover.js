@@ -153,7 +153,11 @@ async function searchProjects(config) {
         map.set(repo.full_name, repo);
       } else {
         const current = map.get(repo.full_name);
-        if (sourceScore > Number(current.source_score || 0)) {
+        const currentTag = String(current.source_tag || "");
+        const shouldPreferSpecificTag = sourceScore === Number(current.source_score || 0)
+          && currentTag === "综合"
+          && spec.tag !== "综合";
+        if (sourceScore > Number(current.source_score || 0) || shouldPreferSpecificTag) {
           current.source_platform = spec.platform;
           current.source_tag = spec.tag;
           current.source_rank = queryRank;
