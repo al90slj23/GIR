@@ -131,6 +131,8 @@ function uniqueFullNamesFromText(text) {
     while ((match = pattern.exec(text)) !== null) {
       const fullName = match[1];
       if (fullName.includes("github.com") || fullName.includes("topics/")) continue;
+      const owner = fullName.split("/")[0].toLowerCase();
+      if (["apps", "collections", "customer-stories", "enterprise", "explore", "features", "marketplace", "orgs", "sponsors", "topics", "trending"].includes(owner)) continue;
       if (!seen.has(fullName)) {
         seen.add(fullName);
         names.push(fullName);
@@ -273,11 +275,11 @@ async function githubSearchBuckets(config) {
 async function sourceBuckets(config) {
   const loaders = [
     ["github_trending", githubTrendingBucket],
-    ["github_search", githubSearchBuckets],
     ["ossinsight", ossInsightBucket],
     ["trendshift", trendshiftBucket],
     ["reporank", repoRankBucket],
     ["gitrepotrend", gitRepoTrendBucket],
+    ["github_search", githubSearchBuckets],
   ];
   const buckets = [];
   for (const [platform, loader] of loaders) {
