@@ -117,10 +117,16 @@ INSERT IGNORE INTO app_settings (setting_key, setting_value, description, update
 VALUES ('weekly_empty_text', '还没有周榜数据。', '周榜空状态文案', NOW());
 
 INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
+VALUES ('discover_daily_enabled', '1', '是否启用日报自动采集', NOW());
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
+VALUES ('discover_weekly_enabled', '1', '是否启用周榜自动采集', NOW());
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
 VALUES ('discover_max_projects', '3', '每次最多分析项目数', NOW());
 
 INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
-VALUES ('discover_per_page', '20', '每条 GitHub 搜索请求拉取数量', NOW());
+VALUES ('discover_per_page', '20', '每个平台或分类最多拉取多少候选项目', NOW());
 
 INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
 VALUES ('discover_recent_days_daily', '3', '日报搜索最近多少天活跃或创建的项目', NOW());
@@ -141,10 +147,10 @@ INSERT IGNORE INTO app_settings (setting_key, setting_value, description, update
 VALUES ('discover_min_stars_agent', '30', 'agent topic 项目最低 stars', NOW());
 
 INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
-VALUES ('discover_topics', 'ai,llm,agent', '采集 topic，逗号或换行分隔', NOW());
+VALUES ('discover_topics', 'ai,llm,agent,php', '旧配置项：采集 topic 已固定在代码中', NOW());
 
 INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
 VALUES ('discover_extra_queries', '', '额外 GitHub 搜索语句，每行一条，可使用 {since}', NOW());
 
 INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
-VALUES ('discover_platforms', 'github_trending,github_search,ossinsight,trendshift,reporank,gitrepotrend', '启用的排行平台，逗号或换行分隔', NOW());
+VALUES ('discover_platforms', 'github_trending,github_search,ossinsight,trendshift,reporank,gitrepotrend', '旧配置项：排行平台已固定在代码中', NOW());

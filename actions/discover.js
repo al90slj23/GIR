@@ -27,7 +27,7 @@ const defaultConfig = {
   min_stars_created: 20,
   min_stars_topic: 50,
   min_stars_agent: 30,
-  topics: ["ai", "llm", "agent"],
+  topics: ["ai", "llm", "agent", "php"],
   extra_queries: [],
   platforms: ["github_trending", "github_search", "ossinsight", "trendshift", "reporank", "gitrepotrend"],
 };
@@ -79,6 +79,8 @@ async function loadDiscoverConfig() {
     const data = await res.json();
     const config = data?.config || {};
     return {
+      daily_enabled: config.daily_enabled !== false,
+      weekly_enabled: config.weekly_enabled !== false,
       max_projects: clampNumber(config.max_projects, defaultConfig.max_projects, 1, 50),
       per_page: clampNumber(config.per_page, defaultConfig.per_page, 1, 100),
       recent_days_daily: clampNumber(config.recent_days_daily, defaultConfig.recent_days_daily, 1, 90),
@@ -590,6 +592,14 @@ function projectPayload(repo, analysis) {
 async function main() {
   const config = await loadDiscoverConfig();
   console.log(`Discover config: max=${config.max_projects}, per_page=${config.per_page}, platforms=${config.platforms.join(",")}, topics=${config.topics.join(",")}`);
+  if (periodType === "daily" && config.daily_enabled === false) {
+    console.log("Daily discover disabled by config; skipping");
+    return;
+  }
+  if (periodType === "weekly" && config.weekly_enabled === false) {
+    console.log("Weekly discover disabled by config; skipping");
+    return;
+  }
   const repos = await searchProjects(config);
   const projects = [];
   for (const repo of repos) {

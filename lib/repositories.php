@@ -249,26 +249,94 @@ function all_app_settings(): array
 function update_app_setting(string $key, string $value): bool
 {
     return db_exec(
-        'UPDATE app_settings SET setting_value = ?, updated_at = ? WHERE setting_key = ?',
-        [truncate_text($value, 5000), date('Y-m-d H:i:s'), truncate_text($key, 64)]
+        'INSERT INTO app_settings (setting_key, setting_value, description, updated_at)
+         VALUES (?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_at = VALUES(updated_at)',
+        [truncate_text($key, 64), truncate_text($value, 5000), '', date('Y-m-d H:i:s')]
     );
 }
 
 function discover_setting_definitions(): array
 {
     return [
-        'discover_max_projects' => ['label' => '每次分析数量', 'type' => 'number', 'default' => '3'],
-        'discover_per_page' => ['label' => '每条搜索拉取数量', 'type' => 'number', 'default' => '20'],
-        'discover_recent_days_daily' => ['label' => '日报最近天数', 'type' => 'number', 'default' => '3'],
-        'discover_recent_days_weekly' => ['label' => '周榜最近天数', 'type' => 'number', 'default' => '14'],
+        'discover_daily_enabled' => ['label' => '启用日报自动采集', 'type' => 'checkbox', 'default' => '1'],
+        'discover_weekly_enabled' => ['label' => '启用周榜自动采集', 'type' => 'checkbox', 'default' => '1'],
+        'discover_max_projects' => ['label' => '每次 DeepSeek 分析数量', 'type' => 'number', 'default' => '3'],
+        'discover_per_page' => ['label' => '每个平台/分类候选数量', 'type' => 'number', 'default' => '20'],
+        'discover_recent_days_daily' => ['label' => '日报 GitHub 搜索窗口', 'type' => 'number', 'default' => '3'],
+        'discover_recent_days_weekly' => ['label' => '周榜 GitHub 搜索窗口', 'type' => 'number', 'default' => '14'],
         'discover_min_stars_general' => ['label' => '通用最低 Stars', 'type' => 'number', 'default' => '100'],
         'discover_min_stars_created' => ['label' => '新项目最低 Stars', 'type' => 'number', 'default' => '20'],
         'discover_min_stars_topic' => ['label' => 'Topic 最低 Stars', 'type' => 'number', 'default' => '50'],
         'discover_min_stars_agent' => ['label' => 'Agent 最低 Stars', 'type' => 'number', 'default' => '30'],
-        'discover_topics' => ['label' => '采集 Topics', 'type' => 'textarea', 'default' => 'ai,llm,agent'],
         'discover_extra_queries' => ['label' => '额外搜索语句', 'type' => 'textarea', 'default' => ''],
-        'discover_platforms' => ['label' => '启用排行平台', 'type' => 'textarea', 'default' => 'github_trending,github_search,ossinsight,trendshift,reporank,gitrepotrend'],
     ];
+}
+
+function discover_platform_catalog(): array
+{
+    return [
+        [
+            'key' => 'github_trending',
+            'label' => 'GitHub Trending',
+            'period' => 'daily / weekly',
+            'limit' => '每周期最多 discover_per_page 个候选',
+            'categories' => ['daily', 'weekly'],
+            'source' => 'https://github.com/trending',
+        ],
+        [
+            'key' => 'ossinsight',
+            'label' => 'OSSInsight',
+            'period' => 'past_24_hours / past_7_days',
+            'limit' => '每周期最多 discover_per_page 个候选',
+            'categories' => ['daily', 'weekly'],
+            'source' => 'https://api.ossinsight.io/v1/trends/repos/',
+        ],
+        [
+            'key' => 'trendshift',
+            'label' => 'Trendshift',
+            'period' => 'daily / weekly',
+            'limit' => '每周期最多 discover_per_page 个候选',
+            'categories' => ['daily', 'weekly'],
+            'source' => 'https://trendshift.io/',
+        ],
+        [
+            'key' => 'reporank',
+            'label' => 'RepoRank',
+            'period' => 'momentum',
+            'limit' => '最多 discover_per_page 个候选',
+            'categories' => ['momentum'],
+            'source' => 'https://reporank.co/',
+        ],
+        [
+            'key' => 'gitrepotrend',
+            'label' => 'GitRepoTrend',
+            'period' => 'attention',
+            'limit' => '每分类最多 discover_per_page 个候选',
+            'categories' => ['ai-ml', 'llm', 'webdev', 'devtools', 'devops', 'finance', 'crypto', 'security', 'datascience', 'mobile', 'rust', 'python', 'go'],
+            'source' => 'https://gitrepotrend.com/api/init',
+        ],
+        [
+            'key' => 'github_search',
+            'label' => 'GitHub Search',
+            'period' => '日报最近 N 天 / 周榜最近 N 天',
+            'limit' => '每条搜索最多 discover_per_page 个候选',
+            'categories' => ['综合', '新项目', 'ai', 'llm', 'agent', 'php', '额外搜索语句'],
+            'source' => 'https://api.github.com/search/repositories',
+        ],
+    ];
+}
+
+function discover_fixed_platforms(): array
+{
+    return array_map(static function (array $platform): string {
+        return (string) $platform['key'];
+    }, discover_platform_catalog());
+}
+
+function discover_fixed_topics(): array
+{
+    return ['ai', 'llm', 'agent', 'php'];
 }
 
 function discover_settings(): array
@@ -303,6 +371,12 @@ function discover_int_setting(string $key, int $default, int $min, int $max): in
     return max($min, min($max, $value));
 }
 
+function discover_bool_setting(string $key, bool $default): bool
+{
+    $value = app_setting($key, $default ? '1' : '0');
+    return in_array(strtolower(trim($value)), ['1', 'true', 'yes', 'on'], true);
+}
+
 function discover_list_setting(string $key): array
 {
     $raw = app_setting($key, '');
@@ -320,6 +394,8 @@ function discover_list_setting(string $key): array
 function discover_public_config(): array
 {
     return [
+        'daily_enabled' => discover_bool_setting('discover_daily_enabled', true),
+        'weekly_enabled' => discover_bool_setting('discover_weekly_enabled', true),
         'max_projects' => discover_int_setting('discover_max_projects', 3, 1, 50),
         'per_page' => discover_int_setting('discover_per_page', 20, 1, 100),
         'recent_days_daily' => discover_int_setting('discover_recent_days_daily', 3, 1, 90),
@@ -328,9 +404,9 @@ function discover_public_config(): array
         'min_stars_created' => discover_int_setting('discover_min_stars_created', 20, 0, 1000000),
         'min_stars_topic' => discover_int_setting('discover_min_stars_topic', 50, 0, 1000000),
         'min_stars_agent' => discover_int_setting('discover_min_stars_agent', 30, 0, 1000000),
-        'topics' => discover_list_setting('discover_topics'),
+        'topics' => discover_fixed_topics(),
         'extra_queries' => discover_list_setting('discover_extra_queries'),
-        'platforms' => discover_list_setting('discover_platforms'),
+        'platforms' => discover_fixed_platforms(),
     ];
 }
 
