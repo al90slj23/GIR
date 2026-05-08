@@ -3,6 +3,7 @@ function render_header(string $title): void
 {
     global $config;
     $siteName = app_setting('site_name', $config['app']['name']);
+    $assetVersion = is_file(__DIR__ . '/assets/app.css') ? (string) filemtime(__DIR__ . '/assets/app.css') : '1';
     ?>
 <!doctype html>
 <html lang="zh-CN">
@@ -10,7 +11,7 @@ function render_header(string $title): void
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><?= h($title) ?> - <?= h($siteName) ?></title>
-    <link rel="stylesheet" href="/assets/app.css">
+    <link rel="stylesheet" href="/assets/app.css?v=<?= h($assetVersion) ?>">
 </head>
 <body>
 <header class="topbar">
