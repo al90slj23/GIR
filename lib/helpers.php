@@ -35,10 +35,17 @@ function request_json(): array
 function truncate_text($value, int $max): string
 {
     $text = trim((string) $value);
+    $text = strip_mysql_utf8_unsupported($text);
     if (function_exists('mb_strlen') && function_exists('mb_substr')) {
         return mb_strlen($text, 'UTF-8') > $max ? mb_substr($text, 0, $max, 'UTF-8') : $text;
     }
     return strlen($text) > $max ? substr($text, 0, $max) : $text;
+}
+
+function strip_mysql_utf8_unsupported(string $text): string
+{
+    $cleaned = preg_replace('/[\x{10000}-\x{10FFFF}]/u', '', $text);
+    return is_string($cleaned) ? $cleaned : $text;
 }
 
 function badge_class(string $recommendation): string
