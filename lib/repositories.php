@@ -107,7 +107,7 @@ function latest_reports(string $periodType, int $limit = 20, string $platform = 
          FROM project_reports r
          INNER JOIN projects p ON p.id = r.project_id
          WHERE r.period_type = ? AND p.is_hidden = 0' . analyzed_report_sql() . $filters['sql'] . '
-         ORDER BY r.report_date DESC, r.php_fit_score DESC, r.useful_score DESC, p.stars DESC
+         ORDER BY r.report_date DESC, r.useful_score DESC, r.play_score DESC, p.stars DESC
          LIMIT ' . (int) $limit,
         array_merge([$periodType], $filters['params'])
     );
@@ -135,7 +135,7 @@ function reports_by_date(string $periodType, string $date, int $limit = 30, stri
          FROM project_reports r
          INNER JOIN projects p ON p.id = r.project_id
          WHERE r.period_type = ? AND r.report_date = ? AND p.is_hidden = 0' . analyzed_report_sql() . $filters['sql'] . '
-         ORDER BY r.php_fit_score DESC, r.useful_score DESC, r.play_score DESC, p.stars DESC
+         ORDER BY r.useful_score DESC, r.play_score DESC, p.stars DESC
          LIMIT ' . (int) $limit,
         array_merge([$periodType, $date], $filters['params'])
     );

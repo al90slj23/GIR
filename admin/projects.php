@@ -109,7 +109,6 @@ render_header('项目管理');
                 <div class="scores">
                     <span class="score">可玩 <?= (int) $project['play_score'] ?>/10</span>
                     <span class="score">实用 <?= (int) $project['useful_score'] ?>/10</span>
-                    <span class="score">PHP适配 <?= (int) $project['php_fit_score'] ?>/10</span>
                     <span class="score">难度 <?= h($project['difficulty'] ?: '-') ?></span>
                 </div>
 

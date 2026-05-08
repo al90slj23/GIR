@@ -520,7 +520,6 @@ function userPrompt(repo, readme) {
       target_users: ["适合谁用"],
       play_score: "1-10",
       useful_score: "1-10",
-      php_fit_score: "1-10",
       difficulty: "低/中/高",
       is_suitable_for_this_host: true,
       ideas_to_reuse: ["可借鉴点"],
