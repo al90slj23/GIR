@@ -130,9 +130,9 @@ function uniqueFullNamesFromText(text) {
     let match;
     while ((match = pattern.exec(text)) !== null) {
       const fullName = match[1];
-      if (fullName.includes("github.com") || fullName.includes("topics/")) continue;
+      if (!looksLikeGithubFullName(fullName)) continue;
       const owner = fullName.split("/")[0].toLowerCase();
-      if (["apps", "collections", "customer-stories", "enterprise", "explore", "features", "marketplace", "orgs", "sponsors", "topics", "trending"].includes(owner)) continue;
+      if (bannedPseudoOwners().includes(owner)) continue;
       if (!seen.has(fullName)) {
         seen.add(fullName);
         names.push(fullName);
@@ -140,6 +140,45 @@ function uniqueFullNamesFromText(text) {
     }
   }
   return names;
+}
+
+function bannedPseudoOwners() {
+  return [
+    "_next",
+    "apps",
+    "application",
+    "blog",
+    "collections",
+    "components",
+    "css",
+    "customer-stories",
+    "enterprise",
+    "explore",
+    "features",
+    "fonts.googleapis.com",
+    "marketplace",
+    "orgs",
+    "out",
+    "repo",
+    "repositories",
+    "resources",
+    "solutions",
+    "sponsors",
+    "topics",
+    "trending",
+    "www.googletagmanager.com",
+  ];
+}
+
+function looksLikeGithubFullName(fullName) {
+  if (typeof fullName !== "string" || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(fullName)) {
+    return false;
+  }
+  const [owner, repo] = fullName.split("/");
+  if (!owner || !repo || owner.includes(".") || owner.length > 39) return false;
+  if (repo.endsWith(".css") || repo.endsWith(".html") || repo.endsWith(".png") || repo.endsWith(".xml")) return false;
+  if (/^\d+$/.test(owner) || /^\d+$/.test(repo)) return false;
+  return true;
 }
 
 async function repoDetails(fullName) {
@@ -151,7 +190,10 @@ async function repoDetails(fullName) {
 async function hydrateCandidates(fullNames, platform, tag, limit) {
   const bucket = [];
   let rank = 0;
-  for (const fullName of fullNames.slice(0, limit)) {
+  let attempts = 0;
+  for (const fullName of fullNames) {
+    if (bucket.length >= limit || attempts >= limit * 8) break;
+    attempts++;
     try {
       const repo = await repoDetails(fullName);
       if (!repo) continue;
