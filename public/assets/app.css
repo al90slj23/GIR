@@ -61,6 +61,22 @@ h2 { font-size: 18px; margin: 0 0 10px; }
 .text-block { white-space: pre-wrap; line-height: 1.65; }
 .dates { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 18px; }
 .dates a { background: #fff; border: 1px solid #d9dee7; border-radius: 6px; padding: 6px 9px; font-size: 13px; }
+.tabs { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 16px; }
+.tabs a {
+  background: #fff;
+  border: 1px solid #d9dee7;
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: #334155;
+  font-size: 14px;
+}
+.tabs a.active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+.rank-label { color: #667085; font-size: 13px; margin-bottom: 4px; }
 table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #d9dee7; }
 th, td { padding: 10px 12px; border-bottom: 1px solid #e5e7eb; text-align: left; vertical-align: top; }
 th { background: #f8fafc; color: #475467; font-weight: 600; }

@@ -3,8 +3,11 @@ require_once (is_file(__DIR__ . '/../lib/bootstrap.php') ? __DIR__ . '/../lib/bo
 require_once (is_file(__DIR__ . '/_layout.php') ? __DIR__ . '/_layout.php' : __DIR__ . '/public/_layout.php');
 
 $date = isset($_GET['date']) ? preg_replace('/[^0-9\-]/', '', (string) $_GET['date']) : '';
+$view = isset($_GET['view']) && $_GET['view'] === 'deepseek' ? 'deepseek' : 'github';
 $dates = recent_report_dates('weekly', 14);
-$reports = $date ? reports_by_date('weekly', $date, 40) : latest_reports('weekly', 40);
+$reports = $date
+    ? ($view === 'github' ? github_rank_reports_by_date('weekly', $date, 40) : reports_by_date('weekly', $date, 40))
+    : ($view === 'github' ? github_rank_reports('weekly', 40) : latest_reports('weekly', 40));
 $pageTitle = app_setting('weekly_title', '本周 GitHub 灵感榜');
 
 render_header($pageTitle);
@@ -16,10 +19,12 @@ render_header($pageTitle);
     </div>
 </div>
 
+<?php render_rank_tabs('/weekly.php', $view, $date); ?>
+
 <?php if ($dates): ?>
 <div class="dates">
     <?php foreach ($dates as $item): ?>
-        <a href="/weekly.php?date=<?= h($item['report_date']) ?>"><?= h($item['report_date']) ?> · <?= (int) $item['total'] ?></a>
+        <a href="/weekly.php?view=<?= h($view) ?>&date=<?= h($item['report_date']) ?>"><?= h($item['report_date']) ?> · <?= (int) $item['total'] ?></a>
     <?php endforeach; ?>
 </div>
 <?php endif; ?>
@@ -28,8 +33,8 @@ render_header($pageTitle);
     <div class="empty"><?= h(app_setting('weekly_empty_text', '还没有周榜数据。')) ?></div>
 <?php else: ?>
     <div class="grid">
-        <?php foreach ($reports as $row): ?>
-            <?php render_project_card($row); ?>
+        <?php foreach ($reports as $index => $row): ?>
+            <?php $view === 'github' ? render_github_project_card($row, $index + 1) : render_project_card($row); ?>
         <?php endforeach; ?>
     </div>
 <?php endif; ?>

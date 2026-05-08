@@ -14,6 +14,19 @@ function latest_reports(string $periodType, int $limit = 20): array
     );
 }
 
+function github_rank_reports(string $periodType, int $limit = 20): array
+{
+    return db_all(
+        'SELECT r.*, p.name, p.full_name, p.html_url, p.description, p.stars, p.forks, p.language, p.topics, p.pushed_at
+         FROM project_reports r
+         INNER JOIN projects p ON p.id = r.project_id
+         WHERE r.period_type = ? AND p.is_hidden = 0
+         ORDER BY r.report_date DESC, p.stars DESC, p.forks DESC, p.pushed_at DESC
+         LIMIT ' . (int) $limit,
+        [$periodType]
+    );
+}
+
 function reports_by_date(string $periodType, string $date, int $limit = 30): array
 {
     return db_all(
@@ -22,6 +35,19 @@ function reports_by_date(string $periodType, string $date, int $limit = 30): arr
          INNER JOIN projects p ON p.id = r.project_id
          WHERE r.period_type = ? AND r.report_date = ? AND p.is_hidden = 0
          ORDER BY r.php_fit_score DESC, r.useful_score DESC, r.play_score DESC, p.stars DESC
+         LIMIT ' . (int) $limit,
+        [$periodType, $date]
+    );
+}
+
+function github_rank_reports_by_date(string $periodType, string $date, int $limit = 30): array
+{
+    return db_all(
+        'SELECT r.*, p.name, p.full_name, p.html_url, p.description, p.stars, p.forks, p.language, p.topics, p.pushed_at
+         FROM project_reports r
+         INNER JOIN projects p ON p.id = r.project_id
+         WHERE r.period_type = ? AND r.report_date = ? AND p.is_hidden = 0
+         ORDER BY p.stars DESC, p.forks DESC, p.pushed_at DESC
          LIMIT ' . (int) $limit,
         [$periodType, $date]
     );

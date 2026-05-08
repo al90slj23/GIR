@@ -67,3 +67,42 @@ function render_project_card(array $row): void
 </article>
 <?php
 }
+
+function render_github_project_card(array $row, int $rank): void
+{
+    ?>
+<article class="project-card">
+    <div class="project-top">
+        <div>
+            <div class="rank-label">#<?= (int) $rank ?> GitHub 原始热度</div>
+            <h2 class="project-title"><a href="/project.php?id=<?= (int) $row['project_id'] ?>"><?= h($row['full_name']) ?></a></h2>
+            <div class="muted"><?= h($row['description'] ?: $row['one_sentence']) ?></div>
+        </div>
+        <span class="badge muted"><?= h($row['language'] ?: '未知语言') ?></span>
+    </div>
+    <div class="metrics">
+        <span class="metric">Stars <?= (int) $row['stars'] ?></span>
+        <span class="metric">Forks <?= (int) $row['forks'] ?></span>
+        <span class="metric">最近推送 <?= h($row['pushed_at'] ?: '-') ?></span>
+        <span class="metric"><?= h($row['project_type'] ?: '未分类') ?></span>
+    </div>
+    <p class="desc"><?= h($row['one_sentence'] ?: '已完成 DeepSeek 中文解读，点进项目查看。') ?></p>
+    <div class="muted">
+        <a href="/project.php?id=<?= (int) $row['project_id'] ?>">查看中文解读</a>
+        · <a href="<?= h($row['html_url']) ?>" target="_blank" rel="noreferrer">GitHub</a>
+        · 报告日期 <?= h($row['report_date']) ?>
+    </div>
+</article>
+<?php
+}
+
+function render_rank_tabs(string $basePath, string $activeView, string $date): void
+{
+    $suffix = $date !== '' ? '&date=' . rawurlencode($date) : '';
+    ?>
+<div class="tabs">
+    <a class="<?= $activeView === 'github' ? 'active' : '' ?>" href="<?= h($basePath) ?>?view=github<?= h($suffix) ?>">GitHub 原榜</a>
+    <a class="<?= $activeView === 'deepseek' ? 'active' : '' ?>" href="<?= h($basePath) ?>?view=deepseek<?= h($suffix) ?>">DeepSeek 解读榜</a>
+</div>
+<?php
+}
