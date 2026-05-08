@@ -95,21 +95,31 @@ async function loadDiscoverConfig() {
   }
 }
 
-function buildQueries(config) {
+function buildQuerySpecs(config) {
   const recentDays = periodType === "weekly" ? config.recent_days_weekly : config.recent_days_daily;
   const since = new Date(Date.now() - recentDays * 86400000).toISOString().slice(0, 10);
-  const queries = [
-    `stars:>${config.min_stars_general} pushed:>${since}`,
-    `created:>${since} stars:>${config.min_stars_created}`,
+  const specs = [
+    { platform: "github", tag: "综合", query: `stars:>${config.min_stars_general} pushed:>${since}` },
+    { platform: "github", tag: "新项目", query: `created:>${since} stars:>${config.min_stars_created}` },
   ];
   for (const topic of config.topics) {
     const minStars = topic.toLowerCase() === "agent" ? config.min_stars_agent : config.min_stars_topic;
-    queries.push(`topic:${topic} pushed:>${since} stars:>${minStars}`);
+    specs.push({ platform: "github", tag: topic, query: `topic:${topic} pushed:>${since} stars:>${minStars}` });
   }
-  for (const query of config.extra_queries) {
-    queries.push(query.replaceAll("{since}", since));
+  for (const [index, query] of config.extra_queries.entries()) {
+    specs.push({
+      platform: "github",
+      tag: `自定义${index + 1}`,
+      query: query.replaceAll("{since}", since),
+    });
   }
-  return [...new Set(queries)];
+  const seen = new Set();
+  return specs.filter((spec) => {
+    const key = `${spec.platform}\n${spec.tag}\n${spec.query}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 async function githubJson(url) {
@@ -122,24 +132,44 @@ async function githubJson(url) {
 
 async function searchProjects(config) {
   const map = new Map();
-  const queries = buildQueries(config);
-  for (const q of queries) {
+  const specs = buildQuerySpecs(config);
+  for (const spec of specs) {
     const url = new URL("https://api.github.com/search/repositories");
-    url.searchParams.set("q", q);
+    url.searchParams.set("q", spec.query);
     url.searchParams.set("sort", "stars");
     url.searchParams.set("order", "desc");
     url.searchParams.set("per_page", String(config.per_page));
     const data = await githubJson(url.toString());
+    let queryRank = 0;
     for (const repo of data.items || []) {
       if (repo.archived || repo.disabled || repo.fork) continue;
+      queryRank++;
+      const sourceScore = scoreRepo(repo);
       if (!map.has(repo.full_name)) {
+        repo.source_platform = spec.platform;
+        repo.source_tag = spec.tag;
+        repo.source_rank = queryRank;
+        repo.source_score = sourceScore;
         map.set(repo.full_name, repo);
+      } else {
+        const current = map.get(repo.full_name);
+        if (sourceScore > Number(current.source_score || 0)) {
+          current.source_platform = spec.platform;
+          current.source_tag = spec.tag;
+          current.source_rank = queryRank;
+          current.source_score = sourceScore;
+        }
       }
     }
   }
   return [...map.values()]
     .sort((a, b) => scoreRepo(b) - scoreRepo(a))
-    .slice(0, config.max_projects);
+    .slice(0, config.max_projects)
+    .map((repo, index) => ({
+      ...repo,
+      source_rank: index + 1,
+      source_score: scoreRepo(repo),
+    }));
 }
 
 function scoreRepo(repo) {
@@ -271,6 +301,10 @@ function projectPayload(repo, analysis) {
     language: repo.language || "",
     topics: repo.topics || [],
     pushed_at: repo.pushed_at,
+    source_platform: repo.source_platform || "github",
+    source_tag: repo.source_tag || "综合",
+    source_rank: repo.source_rank || 0,
+    source_score: repo.source_score || 0,
     analysis,
   };
 }

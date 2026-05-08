@@ -57,6 +57,49 @@ foreach ($indexes as $index => $statement) {
     }
 }
 
+$reportColumns = db_all('SHOW COLUMNS FROM project_reports');
+$existingReportColumns = [];
+foreach ($reportColumns as $column) {
+    if (isset($column['Field'])) {
+        $existingReportColumns[$column['Field']] = true;
+    }
+}
+
+$reportMigrations = [
+    'source_platform' => "ALTER TABLE project_reports ADD COLUMN source_platform VARCHAR(64) NOT NULL DEFAULT 'github' AFTER report_date",
+    'source_tag' => "ALTER TABLE project_reports ADD COLUMN source_tag VARCHAR(64) NOT NULL DEFAULT '综合' AFTER source_platform",
+    'source_rank' => "ALTER TABLE project_reports ADD COLUMN source_rank INT UNSIGNED NOT NULL DEFAULT 0 AFTER source_tag",
+    'source_score' => "ALTER TABLE project_reports ADD COLUMN source_score DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER source_rank",
+];
+foreach ($reportMigrations as $column => $statement) {
+    if (!isset($existingReportColumns[$column]) && !db()->query($statement)) {
+        $errors[] = db()->error;
+    }
+}
+
+$reportIndexRows = db_all('SHOW INDEX FROM project_reports');
+$existingReportIndexes = [];
+foreach ($reportIndexRows as $row) {
+    if (isset($row['Key_name'])) {
+        $existingReportIndexes[$row['Key_name']] = true;
+    }
+}
+if (isset($existingReportIndexes['uniq_project_period']) && !db()->query('ALTER TABLE project_reports DROP INDEX uniq_project_period')) {
+    $errors[] = db()->error;
+    unset($existingReportIndexes['uniq_project_period']);
+}
+
+$reportIndexes = [
+    'uniq_project_period_source' => 'ALTER TABLE project_reports ADD UNIQUE KEY uniq_project_period_source (project_id, period_type, report_date, source_platform, source_tag)',
+    'idx_source' => 'ALTER TABLE project_reports ADD INDEX idx_source (source_platform, source_tag)',
+    'idx_source_rank' => 'ALTER TABLE project_reports ADD INDEX idx_source_rank (source_platform, source_tag, source_rank)',
+];
+foreach ($reportIndexes as $index => $statement) {
+    if (!isset($existingReportIndexes[$index]) && !db()->query($statement)) {
+        $errors[] = db()->error;
+    }
+}
+
 json_response([
     'ok' => !$errors,
     'statements' => count($statements),

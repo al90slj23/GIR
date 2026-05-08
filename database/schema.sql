@@ -31,6 +31,10 @@ CREATE TABLE IF NOT EXISTS project_reports (
   run_id INT UNSIGNED DEFAULT NULL,
   period_type VARCHAR(16) NOT NULL DEFAULT 'daily',
   report_date DATE NOT NULL,
+  source_platform VARCHAR(64) NOT NULL DEFAULT 'github',
+  source_tag VARCHAR(64) NOT NULL DEFAULT '综合',
+  source_rank INT UNSIGNED NOT NULL DEFAULT 0,
+  source_score DECIMAL(12,2) NOT NULL DEFAULT 0,
   one_sentence VARCHAR(255) NOT NULL DEFAULT '',
   project_type VARCHAR(64) NOT NULL DEFAULT '',
   problem_text TEXT,
@@ -48,8 +52,10 @@ CREATE TABLE IF NOT EXISTS project_reports (
   raw_ai_json MEDIUMTEXT,
   created_at DATETIME NOT NULL,
   PRIMARY KEY (id),
-  UNIQUE KEY uniq_project_period (project_id, period_type, report_date),
+  UNIQUE KEY uniq_project_period_source (project_id, period_type, report_date, source_platform, source_tag),
   KEY idx_report_date (report_date),
+  KEY idx_source (source_platform, source_tag),
+  KEY idx_source_rank (source_platform, source_tag, source_rank),
   KEY idx_scores (php_fit_score, useful_score, play_score),
   KEY idx_recommendation (recommendation)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8;

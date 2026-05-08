@@ -43,7 +43,13 @@ foreach ($projects as $index => $item) {
         $errors[] = "project {$index}: project upsert failed";
         continue;
     }
-    upsert_report($projectId, $runId, $periodType, $reportDate, $analysis);
+    $source = [
+        'platform' => isset($item['source_platform']) ? (string) $item['source_platform'] : 'github',
+        'tag' => isset($item['source_tag']) ? (string) $item['source_tag'] : '综合',
+        'rank' => isset($item['source_rank']) ? (int) $item['source_rank'] : 0,
+        'score' => isset($item['source_score']) ? (float) $item['source_score'] : 0,
+    ];
+    upsert_report($projectId, $runId, $periodType, $reportDate, $analysis, $source);
     $analyzed++;
 }
 

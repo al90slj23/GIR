@@ -1,56 +1,117 @@
 <?php
 declare(strict_types=1);
 
-function latest_reports(string $periodType, int $limit = 20): array
+function ranking_platform_labels(): array
 {
+    return [
+        'github' => 'GitHub',
+        'ossinsight' => 'OSSInsight',
+        'trendshift' => 'Trendshift',
+        'reporank' => 'RepoRank',
+    ];
+}
+
+function ranking_platform_label(string $platform): string
+{
+    $labels = ranking_platform_labels();
+    return $labels[$platform] ?? $platform;
+}
+
+function available_ranking_platforms(string $periodType): array
+{
+    return db_all(
+        'SELECT r.source_platform, COUNT(*) AS total
+         FROM project_reports r
+         INNER JOIN projects p ON p.id = r.project_id
+         WHERE r.period_type = ? AND p.is_hidden = 0
+         GROUP BY r.source_platform
+         ORDER BY total DESC, r.source_platform ASC',
+        [$periodType]
+    );
+}
+
+function available_ranking_tags(string $periodType, string $platform): array
+{
+    return db_all(
+        'SELECT r.source_tag, COUNT(*) AS total
+         FROM project_reports r
+         INNER JOIN projects p ON p.id = r.project_id
+         WHERE r.period_type = ? AND r.source_platform = ? AND p.is_hidden = 0
+         GROUP BY r.source_tag
+         ORDER BY total DESC, r.source_tag ASC',
+        [$periodType, $platform]
+    );
+}
+
+function latest_reports(string $periodType, int $limit = 20, string $platform = '', string $tag = ''): array
+{
+    $filters = report_source_filter($platform, $tag);
     return db_all(
         'SELECT r.*, p.name, p.full_name, p.html_url, p.description, p.stars, p.forks, p.language, p.topics, p.pushed_at
          FROM project_reports r
          INNER JOIN projects p ON p.id = r.project_id
-         WHERE r.period_type = ? AND p.is_hidden = 0
+         WHERE r.period_type = ? AND p.is_hidden = 0' . $filters['sql'] . '
          ORDER BY r.report_date DESC, r.php_fit_score DESC, r.useful_score DESC, p.stars DESC
          LIMIT ' . (int) $limit,
-        [$periodType]
+        array_merge([$periodType], $filters['params'])
     );
 }
 
-function github_rank_reports(string $periodType, int $limit = 20): array
+function github_rank_reports(string $periodType, int $limit = 20, string $platform = '', string $tag = ''): array
 {
+    $filters = report_source_filter($platform, $tag);
     return db_all(
         'SELECT r.*, p.name, p.full_name, p.html_url, p.description, p.stars, p.forks, p.language, p.topics, p.pushed_at
          FROM project_reports r
          INNER JOIN projects p ON p.id = r.project_id
-         WHERE r.period_type = ? AND p.is_hidden = 0
-         ORDER BY r.report_date DESC, p.stars DESC, p.forks DESC, p.pushed_at DESC
+         WHERE r.period_type = ? AND p.is_hidden = 0' . $filters['sql'] . '
+         ORDER BY r.report_date DESC, r.source_rank ASC, r.source_score DESC, p.stars DESC, p.forks DESC
          LIMIT ' . (int) $limit,
-        [$periodType]
+        array_merge([$periodType], $filters['params'])
     );
 }
 
-function reports_by_date(string $periodType, string $date, int $limit = 30): array
+function reports_by_date(string $periodType, string $date, int $limit = 30, string $platform = '', string $tag = ''): array
 {
+    $filters = report_source_filter($platform, $tag);
     return db_all(
         'SELECT r.*, p.name, p.full_name, p.html_url, p.description, p.stars, p.forks, p.language, p.topics, p.pushed_at
          FROM project_reports r
          INNER JOIN projects p ON p.id = r.project_id
-         WHERE r.period_type = ? AND r.report_date = ? AND p.is_hidden = 0
+         WHERE r.period_type = ? AND r.report_date = ? AND p.is_hidden = 0' . $filters['sql'] . '
          ORDER BY r.php_fit_score DESC, r.useful_score DESC, r.play_score DESC, p.stars DESC
          LIMIT ' . (int) $limit,
-        [$periodType, $date]
+        array_merge([$periodType, $date], $filters['params'])
     );
 }
 
-function github_rank_reports_by_date(string $periodType, string $date, int $limit = 30): array
+function github_rank_reports_by_date(string $periodType, string $date, int $limit = 30, string $platform = '', string $tag = ''): array
 {
+    $filters = report_source_filter($platform, $tag);
     return db_all(
         'SELECT r.*, p.name, p.full_name, p.html_url, p.description, p.stars, p.forks, p.language, p.topics, p.pushed_at
          FROM project_reports r
          INNER JOIN projects p ON p.id = r.project_id
-         WHERE r.period_type = ? AND r.report_date = ? AND p.is_hidden = 0
-         ORDER BY p.stars DESC, p.forks DESC, p.pushed_at DESC
+         WHERE r.period_type = ? AND r.report_date = ? AND p.is_hidden = 0' . $filters['sql'] . '
+         ORDER BY r.source_rank ASC, r.source_score DESC, p.stars DESC, p.forks DESC
          LIMIT ' . (int) $limit,
-        [$periodType, $date]
+        array_merge([$periodType, $date], $filters['params'])
     );
+}
+
+function report_source_filter(string $platform, string $tag): array
+{
+    $sql = '';
+    $params = [];
+    if ($platform !== '') {
+        $sql .= ' AND r.source_platform = ?';
+        $params[] = truncate_text($platform, 64);
+    }
+    if ($tag !== '') {
+        $sql .= ' AND r.source_tag = ?';
+        $params[] = truncate_text($tag, 64);
+    }
+    return ['sql' => $sql, 'params' => $params];
 }
 
 function recent_report_dates(string $periodType, int $limit = 14): array
@@ -388,17 +449,23 @@ function upsert_project(array $item): int
     return db_insert_id();
 }
 
-function upsert_report(int $projectId, ?int $runId, string $periodType, string $reportDate, array $analysis): void
+function upsert_report(int $projectId, ?int $runId, string $periodType, string $reportDate, array $analysis, array $source = []): void
 {
     $now = date('Y-m-d H:i:s');
     $raw = json_encode($analysis, JSON_UNESCAPED_UNICODE);
+    $sourcePlatform = truncate_text($source['platform'] ?? 'github', 64);
+    $sourceTag = truncate_text($source['tag'] ?? '综合', 64);
+    $sourceRank = max(0, (int) ($source['rank'] ?? 0));
+    $sourceScore = (float) ($source['score'] ?? 0);
     $existing = db_one(
-        'SELECT id FROM project_reports WHERE project_id = ? AND period_type = ? AND report_date = ?',
-        [$projectId, $periodType, $reportDate]
+        'SELECT id FROM project_reports WHERE project_id = ? AND period_type = ? AND report_date = ? AND source_platform = ? AND source_tag = ?',
+        [$projectId, $periodType, $reportDate, $sourcePlatform, $sourceTag]
     );
 
     $params = [
         $runId ?: null,
+        $sourceRank,
+        $sourceScore,
         truncate_text($analysis['one_sentence'] ?? '', 255),
         truncate_text($analysis['project_type'] ?? '', 64),
         truncate_text($analysis['problem'] ?? $analysis['problem_text'] ?? '', 5000),
@@ -420,7 +487,7 @@ function upsert_report(int $projectId, ?int $runId, string $periodType, string $
         $params[] = (int) $existing['id'];
         db_exec(
             'UPDATE project_reports
-             SET run_id = ?, one_sentence = ?, project_type = ?, problem_text = ?, tech_stack = ?, target_users = ?,
+             SET run_id = ?, source_rank = ?, source_score = ?, one_sentence = ?, project_type = ?, problem_text = ?, tech_stack = ?, target_users = ?,
                  play_score = ?, useful_score = ?, php_fit_score = ?, difficulty = ?, is_suitable_for_this_host = ?,
                  ideas_to_reuse = ?, risks = ?, recommendation = ?, summary_zh = ?, raw_ai_json = ?
              WHERE id = ?',
@@ -429,14 +496,15 @@ function upsert_report(int $projectId, ?int $runId, string $periodType, string $
         return;
     }
 
-    array_unshift($params, $projectId, $periodType, $reportDate);
+    array_unshift($params, $projectId, $periodType, $reportDate, $sourcePlatform, $sourceTag);
     $params[] = $now;
     db_exec(
         'INSERT INTO project_reports
-         (project_id, period_type, report_date, run_id, one_sentence, project_type, problem_text, tech_stack, target_users,
+         (project_id, period_type, report_date, source_platform, source_tag, run_id, source_rank, source_score,
+          one_sentence, project_type, problem_text, tech_stack, target_users,
           play_score, useful_score, php_fit_score, difficulty, is_suitable_for_this_host, ideas_to_reuse, risks,
           recommendation, summary_zh, raw_ai_json, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         $params
     );
 }

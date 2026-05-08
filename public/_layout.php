@@ -70,11 +70,13 @@ function render_project_card(array $row): void
 
 function render_github_project_card(array $row, int $rank): void
 {
+    $platform = ranking_platform_label((string) ($row['source_platform'] ?? 'github'));
+    $tag = (string) ($row['source_tag'] ?? '综合');
     ?>
 <article class="project-card">
     <div class="project-top">
         <div>
-            <div class="rank-label">#<?= (int) $rank ?> GitHub 原始热度</div>
+            <div class="rank-label">#<?= (int) (($row['source_rank'] ?? 0) ?: $rank) ?> <?= h($platform) ?> · <?= h($tag) ?></div>
             <h2 class="project-title"><a href="/project.php?id=<?= (int) $row['project_id'] ?>"><?= h($row['full_name']) ?></a></h2>
             <div class="muted"><?= h($row['description'] ?: $row['one_sentence']) ?></div>
         </div>
@@ -96,13 +98,80 @@ function render_github_project_card(array $row, int $rank): void
 <?php
 }
 
-function render_rank_tabs(string $basePath, string $activeView, string $date): void
+function render_rank_tabs(string $basePath, string $activeView, string $date, string $platform = '', string $tag = ''): void
 {
-    $suffix = $date !== '' ? '&date=' . rawurlencode($date) : '';
+    $githubQuery = http_build_query(array_filter([
+        'platform' => $platform,
+        'tag' => $tag,
+        'view' => 'github',
+        'date' => $date,
+    ], 'strlen'));
+    $deepseekQuery = http_build_query(array_filter([
+        'platform' => $platform,
+        'tag' => $tag,
+        'view' => 'deepseek',
+        'date' => $date,
+    ], 'strlen'));
     ?>
 <div class="tabs">
-    <a class="<?= $activeView === 'github' ? 'active' : '' ?>" href="<?= h($basePath) ?>?view=github<?= h($suffix) ?>">GitHub 原榜</a>
-    <a class="<?= $activeView === 'deepseek' ? 'active' : '' ?>" href="<?= h($basePath) ?>?view=deepseek<?= h($suffix) ?>">DeepSeek 解读榜</a>
+    <a class="<?= $activeView === 'github' ? 'active' : '' ?>" href="<?= h($basePath) ?>?<?= h($githubQuery) ?>">原版排行</a>
+    <a class="<?= $activeView === 'deepseek' ? 'active' : '' ?>" href="<?= h($basePath) ?>?<?= h($deepseekQuery) ?>">DeepSeek 中文解读</a>
+</div>
+<?php
+}
+
+function render_platform_tabs(string $basePath, array $platforms, string $activePlatform, string $activeView, string $date, string $tag): void
+{
+    if (!$platforms) {
+        return;
+    }
+    ?>
+<div class="tabs platform-tabs">
+    <?php foreach ($platforms as $platform): ?>
+        <?php
+        $value = (string) $platform['source_platform'];
+        $query = http_build_query(array_filter([
+            'platform' => $value,
+            'view' => $activeView,
+            'tag' => $tag,
+            'date' => $date,
+        ], 'strlen'));
+        ?>
+        <a class="<?= $activePlatform === $value ? 'active' : '' ?>" href="<?= h($basePath) ?>?<?= h($query) ?>">
+            <?= h(ranking_platform_label($value)) ?> · <?= (int) $platform['total'] ?>
+        </a>
+    <?php endforeach; ?>
+</div>
+<?php
+}
+
+function render_tag_tabs(string $basePath, array $tags, string $activeTag, string $activePlatform, string $activeView, string $date): void
+{
+    if (!$tags) {
+        return;
+    }
+    $allQuery = http_build_query(array_filter([
+        'platform' => $activePlatform,
+        'view' => $activeView,
+        'date' => $date,
+    ], 'strlen'));
+    ?>
+<div class="tabs tag-tabs">
+    <a class="<?= $activeTag === '' ? 'active' : '' ?>" href="<?= h($basePath) ?>?<?= h($allQuery) ?>">全部 tag</a>
+    <?php foreach ($tags as $tag): ?>
+        <?php
+        $value = (string) $tag['source_tag'];
+        $query = http_build_query(array_filter([
+            'platform' => $activePlatform,
+            'view' => $activeView,
+            'tag' => $value,
+            'date' => $date,
+        ], 'strlen'));
+        ?>
+        <a class="<?= $activeTag === $value ? 'active' : '' ?>" href="<?= h($basePath) ?>?<?= h($query) ?>">
+            <?= h($value) ?> · <?= (int) $tag['total'] ?>
+        </a>
+    <?php endforeach; ?>
 </div>
 <?php
 }
