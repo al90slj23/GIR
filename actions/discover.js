@@ -1,6 +1,5 @@
 const runType = process.env.RUN_TYPE || process.argv[2] || "daily";
 const periodType = runType === "weekly" ? "weekly" : runType === "manual" ? "manual" : "daily";
-const maxProjects = Number(process.env.MAX_PROJECTS || "10");
 const ingestBatchSize = Math.max(1, Number(process.env.INGEST_BATCH_SIZE || "1"));
 
 const env = {
@@ -10,6 +9,7 @@ const env = {
   deepseekModel: process.env.DEEPSEEK_MODEL || "deepseek-chat",
   ingestUrl: process.env.APP_INGEST_URL || "",
   ingestToken: process.env.APP_INGEST_TOKEN || "",
+  configUrl: process.env.APP_CONFIG_URL || "",
 };
 
 for (const [key, value] of Object.entries(env)) {
@@ -18,24 +18,99 @@ for (const [key, value] of Object.entries(env)) {
   }
 }
 
-const today = new Date().toISOString().slice(0, 10);
-const since = new Date(Date.now() - (periodType === "weekly" ? 14 : 3) * 86400000)
-  .toISOString()
-  .slice(0, 10);
+const defaultConfig = {
+  max_projects: Number(process.env.MAX_PROJECTS || "10"),
+  per_page: 20,
+  recent_days_daily: 3,
+  recent_days_weekly: 14,
+  min_stars_general: 100,
+  min_stars_created: 20,
+  min_stars_topic: 50,
+  min_stars_agent: 30,
+  topics: ["ai", "llm", "agent"],
+  extra_queries: [],
+};
 
-const queries = [
-  `stars:>100 pushed:>${since}`,
-  `created:>${since} stars:>20`,
-  `topic:ai pushed:>${since} stars:>50`,
-  `topic:llm pushed:>${since} stars:>50`,
-  `topic:agent pushed:>${since} stars:>30`,
-];
+const today = new Date().toISOString().slice(0, 10);
 
 const ghHeaders = {
   "Accept": "application/vnd.github+json",
-  "User-Agent": "AI-Project-Detective",
+  "User-Agent": "GIR-Discover",
   ...(env.githubToken ? { "Authorization": `Bearer ${env.githubToken}` } : {}),
 };
+
+function clampNumber(value, fallback, min, max) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(min, Math.min(max, Math.floor(number)));
+}
+
+function normalizeList(value) {
+  if (Array.isArray(value)) {
+    return [...new Set(value.map((item) => String(item).trim()).filter(Boolean))];
+  }
+  return [...new Set(String(value || "").split(/[\n,]+/).map((item) => item.trim()).filter(Boolean))];
+}
+
+function deriveConfigUrl() {
+  if (env.configUrl) return env.configUrl;
+  if (/\/api\/receive_projects\.php($|\?)/.test(env.ingestUrl)) {
+    return env.ingestUrl.replace(/\/api\/receive_projects\.php($|\?.*)/, "/api/discover_config.php");
+  }
+  return "";
+}
+
+async function loadDiscoverConfig() {
+  const url = deriveConfigUrl();
+  if (!url) return defaultConfig;
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "Accept": "application/json",
+        "Authorization": `Bearer ${env.ingestToken}`,
+        "User-Agent": "GIR-Discover",
+      },
+    });
+    if (!res.ok) {
+      console.warn(`Config ${res.status}: using defaults`);
+      return defaultConfig;
+    }
+    const data = await res.json();
+    const config = data?.config || {};
+    return {
+      max_projects: clampNumber(config.max_projects, defaultConfig.max_projects, 1, 50),
+      per_page: clampNumber(config.per_page, defaultConfig.per_page, 1, 100),
+      recent_days_daily: clampNumber(config.recent_days_daily, defaultConfig.recent_days_daily, 1, 90),
+      recent_days_weekly: clampNumber(config.recent_days_weekly, defaultConfig.recent_days_weekly, 1, 180),
+      min_stars_general: clampNumber(config.min_stars_general, defaultConfig.min_stars_general, 0, 1000000),
+      min_stars_created: clampNumber(config.min_stars_created, defaultConfig.min_stars_created, 0, 1000000),
+      min_stars_topic: clampNumber(config.min_stars_topic, defaultConfig.min_stars_topic, 0, 1000000),
+      min_stars_agent: clampNumber(config.min_stars_agent, defaultConfig.min_stars_agent, 0, 1000000),
+      topics: normalizeList(config.topics).length ? normalizeList(config.topics) : defaultConfig.topics,
+      extra_queries: normalizeList(config.extra_queries),
+    };
+  } catch (error) {
+    console.warn(`Config error: ${error.message}; using defaults`);
+    return defaultConfig;
+  }
+}
+
+function buildQueries(config) {
+  const recentDays = periodType === "weekly" ? config.recent_days_weekly : config.recent_days_daily;
+  const since = new Date(Date.now() - recentDays * 86400000).toISOString().slice(0, 10);
+  const queries = [
+    `stars:>${config.min_stars_general} pushed:>${since}`,
+    `created:>${since} stars:>${config.min_stars_created}`,
+  ];
+  for (const topic of config.topics) {
+    const minStars = topic.toLowerCase() === "agent" ? config.min_stars_agent : config.min_stars_topic;
+    queries.push(`topic:${topic} pushed:>${since} stars:>${minStars}`);
+  }
+  for (const query of config.extra_queries) {
+    queries.push(query.replaceAll("{since}", since));
+  }
+  return [...new Set(queries)];
+}
 
 async function githubJson(url) {
   const res = await fetch(url, { headers: ghHeaders });
@@ -45,14 +120,15 @@ async function githubJson(url) {
   return res.json();
 }
 
-async function searchProjects() {
+async function searchProjects(config) {
   const map = new Map();
+  const queries = buildQueries(config);
   for (const q of queries) {
     const url = new URL("https://api.github.com/search/repositories");
     url.searchParams.set("q", q);
     url.searchParams.set("sort", "stars");
     url.searchParams.set("order", "desc");
-    url.searchParams.set("per_page", "20");
+    url.searchParams.set("per_page", String(config.per_page));
     const data = await githubJson(url.toString());
     for (const repo of data.items || []) {
       if (repo.archived || repo.disabled || repo.fork) continue;
@@ -63,7 +139,7 @@ async function searchProjects() {
   }
   return [...map.values()]
     .sort((a, b) => scoreRepo(b) - scoreRepo(a))
-    .slice(0, maxProjects);
+    .slice(0, config.max_projects);
 }
 
 function scoreRepo(repo) {
@@ -77,7 +153,7 @@ async function getReadme(repo) {
   try {
     const data = await githubJson(url);
     if (!data.download_url) return "";
-    const res = await fetch(data.download_url, { headers: { "User-Agent": "AI-Project-Detective" } });
+    const res = await fetch(data.download_url, { headers: { "User-Agent": "GIR-Discover" } });
     if (!res.ok) return "";
     const text = await res.text();
     return text.slice(0, 12000);
@@ -200,7 +276,9 @@ function projectPayload(repo, analysis) {
 }
 
 async function main() {
-  const repos = await searchProjects();
+  const config = await loadDiscoverConfig();
+  console.log(`Discover config: max=${config.max_projects}, per_page=${config.per_page}, topics=${config.topics.join(",")}`);
+  const repos = await searchProjects(config);
   const projects = [];
   for (const repo of repos) {
     console.log(`Analyzing ${repo.full_name}`);

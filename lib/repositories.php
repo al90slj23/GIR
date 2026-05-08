@@ -164,6 +164,84 @@ function update_app_setting(string $key, string $value): bool
     );
 }
 
+function discover_setting_definitions(): array
+{
+    return [
+        'discover_max_projects' => ['label' => '每次分析数量', 'type' => 'number', 'default' => '3'],
+        'discover_per_page' => ['label' => '每条搜索拉取数量', 'type' => 'number', 'default' => '20'],
+        'discover_recent_days_daily' => ['label' => '日报最近天数', 'type' => 'number', 'default' => '3'],
+        'discover_recent_days_weekly' => ['label' => '周榜最近天数', 'type' => 'number', 'default' => '14'],
+        'discover_min_stars_general' => ['label' => '通用最低 Stars', 'type' => 'number', 'default' => '100'],
+        'discover_min_stars_created' => ['label' => '新项目最低 Stars', 'type' => 'number', 'default' => '20'],
+        'discover_min_stars_topic' => ['label' => 'Topic 最低 Stars', 'type' => 'number', 'default' => '50'],
+        'discover_min_stars_agent' => ['label' => 'Agent 最低 Stars', 'type' => 'number', 'default' => '30'],
+        'discover_topics' => ['label' => '采集 Topics', 'type' => 'textarea', 'default' => 'ai,llm,agent'],
+        'discover_extra_queries' => ['label' => '额外搜索语句', 'type' => 'textarea', 'default' => ''],
+    ];
+}
+
+function discover_settings(): array
+{
+    $definitions = discover_setting_definitions();
+    $keys = array_keys($definitions);
+    $quoted = implode(',', array_fill(0, count($keys), '?'));
+    $rows = db_all('SELECT setting_key, setting_value, description FROM app_settings WHERE setting_key IN (' . $quoted . ') ORDER BY setting_key ASC', $keys);
+    $settings = [];
+    foreach ($definitions as $key => $definition) {
+        $settings[$key] = [
+            'key' => $key,
+            'label' => $definition['label'],
+            'type' => $definition['type'],
+            'value' => $definition['default'],
+            'description' => '',
+        ];
+    }
+    foreach ($rows as $row) {
+        $key = (string) $row['setting_key'];
+        if (isset($settings[$key])) {
+            $settings[$key]['value'] = (string) $row['setting_value'];
+            $settings[$key]['description'] = (string) $row['description'];
+        }
+    }
+    return $settings;
+}
+
+function discover_int_setting(string $key, int $default, int $min, int $max): int
+{
+    $value = (int) app_setting($key, (string) $default);
+    return max($min, min($max, $value));
+}
+
+function discover_list_setting(string $key): array
+{
+    $raw = app_setting($key, '');
+    $items = preg_split('/[\r\n,]+/', $raw);
+    $clean = [];
+    foreach ($items ?: [] as $item) {
+        $item = trim((string) $item);
+        if ($item !== '') {
+            $clean[] = $item;
+        }
+    }
+    return array_values(array_unique($clean));
+}
+
+function discover_public_config(): array
+{
+    return [
+        'max_projects' => discover_int_setting('discover_max_projects', 3, 1, 50),
+        'per_page' => discover_int_setting('discover_per_page', 20, 1, 100),
+        'recent_days_daily' => discover_int_setting('discover_recent_days_daily', 3, 1, 90),
+        'recent_days_weekly' => discover_int_setting('discover_recent_days_weekly', 14, 1, 180),
+        'min_stars_general' => discover_int_setting('discover_min_stars_general', 100, 0, 1000000),
+        'min_stars_created' => discover_int_setting('discover_min_stars_created', 20, 0, 1000000),
+        'min_stars_topic' => discover_int_setting('discover_min_stars_topic', 50, 0, 1000000),
+        'min_stars_agent' => discover_int_setting('discover_min_stars_agent', 30, 0, 1000000),
+        'topics' => discover_list_setting('discover_topics'),
+        'extra_queries' => discover_list_setting('discover_extra_queries'),
+    ];
+}
+
 function github_trigger_configured(): bool
 {
     global $config;

@@ -58,6 +58,12 @@ render_header('后台');
 </section>
 
 <section class="panel">
+    <h2>采集设置</h2>
+    <p class="muted">调整关键词、topic、stars 门槛和每次分析数量，下一次 Actions 自动生效。</p>
+    <a class="button" href="/admin/discovery.php">编辑采集设置</a>
+</section>
+
+<section class="panel">
     <h2>站点设置</h2>
     <p class="muted">站点名称、导航文字和页面文案现在从数据库读取。</p>
     <a class="button" href="/admin/settings.php">编辑站点设置</a>

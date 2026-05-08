@@ -101,6 +101,15 @@ input[type="search"] {
   font: inherit;
   background: #fff;
 }
+input[type="number"] {
+  width: 180px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: #1f2933;
+  font: inherit;
+  background: #fff;
+}
 select {
   border: 1px solid #cbd5e1;
   border-radius: 6px;

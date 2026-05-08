@@ -109,3 +109,33 @@ VALUES ('weekly_subtitle', '按周聚合更值得研究、学习和复刻的 Git
 
 INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
 VALUES ('weekly_empty_text', '还没有周榜数据。', '周榜空状态文案', NOW());
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
+VALUES ('discover_max_projects', '3', '每次最多分析项目数', NOW());
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
+VALUES ('discover_per_page', '20', '每条 GitHub 搜索请求拉取数量', NOW());
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
+VALUES ('discover_recent_days_daily', '3', '日报搜索最近多少天活跃或创建的项目', NOW());
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
+VALUES ('discover_recent_days_weekly', '14', '周榜搜索最近多少天活跃或创建的项目', NOW());
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
+VALUES ('discover_min_stars_general', '100', '通用活跃项目最低 stars', NOW());
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
+VALUES ('discover_min_stars_created', '20', '新创建项目最低 stars', NOW());
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
+VALUES ('discover_min_stars_topic', '50', 'topic 项目最低 stars', NOW());
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
+VALUES ('discover_min_stars_agent', '30', 'agent topic 项目最低 stars', NOW());
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
+VALUES ('discover_topics', 'ai,llm,agent', '采集 topic，逗号或换行分隔', NOW());
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
+VALUES ('discover_extra_queries', '', '额外 GitHub 搜索语句，每行一条，可使用 {since}', NOW());
