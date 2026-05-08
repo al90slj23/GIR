@@ -160,4 +160,10 @@ INSERT IGNORE INTO app_settings (setting_key, setting_value, description, update
 VALUES ('discover_extra_queries', '', '额外 GitHub 搜索语句，每行一条，可使用 {since}', NOW());
 
 INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
+VALUES ('deepseek_system_prompt', '你是一个帮助站长发现 GitHub 新项目的技术分析员。\n站长的部署环境是传统 PHP 7.2 + MySQL 5.1 虚拟主机，不能运行 Docker、Node/Python 常驻服务、本地模型或 WebSocket。\n你必须用中文输出严格 JSON，不要 Markdown，不要解释。\n评分为 1 到 10 的整数。\nplay_score 衡量项目是否有趣、是否值得点开体验、是否能带来灵感。\nuseful_score 衡量项目是否解决真实问题、是否有明确使用价值。\nmaturity_score 衡量项目成熟度，综合 Stars、Forks、最近更新、文档完整度和社区活跃度。\ndifficulty 衡量理解、部署、改造或复刻成本，只能输出 低、中、高。', 'DeepSeek 系统提示词', NOW());
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
+VALUES ('deepseek_task_prompt', '为这次榜单命中生成一条新的中文解说。即使历史里已经分析过同一个项目，也不要复用旧文案；请结合最近几次解说，判断这次是否有新功能、热度变化、定位变化或值得重新关注的原因。表达要说人话，避免空泛夸奖，重点说明这个项目解决什么问题、适合谁、是否值得收藏或研究。', 'DeepSeek 解读任务提示词', NOW());
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
 VALUES ('discover_platforms', 'github_trending,github_search,ossinsight,trendshift,reporank,gitrepotrend', '旧配置项：排行平台已固定在代码中', NOW());

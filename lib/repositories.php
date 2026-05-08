@@ -324,25 +324,46 @@ function update_app_setting(string $key, string $value): bool
         'INSERT INTO app_settings (setting_key, setting_value, description, updated_at)
          VALUES (?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_at = VALUES(updated_at)',
-        [truncate_text($key, 64), truncate_text($value, 5000), '', date('Y-m-d H:i:s')]
+        [truncate_text($key, 64), truncate_text($value, 20000), '', date('Y-m-d H:i:s')]
     );
+}
+
+function default_deepseek_system_prompt(): string
+{
+    return implode("\n", [
+        '你是一个帮助站长发现 GitHub 新项目的技术分析员。',
+        '站长的部署环境是传统 PHP 7.2 + MySQL 5.1 虚拟主机，不能运行 Docker、Node/Python 常驻服务、本地模型或 WebSocket。',
+        '你必须用中文输出严格 JSON，不要 Markdown，不要解释。',
+        '评分为 1 到 10 的整数。',
+        'play_score 衡量项目是否有趣、是否值得点开体验、是否能带来灵感。',
+        'useful_score 衡量项目是否解决真实问题、是否有明确使用价值。',
+        'maturity_score 衡量项目成熟度，综合 Stars、Forks、最近更新、文档完整度和社区活跃度。',
+        'difficulty 衡量理解、部署、改造或复刻成本，只能输出 低、中、高。',
+    ]);
+}
+
+function default_deepseek_task_prompt(): string
+{
+    return '为这次榜单命中生成一条新的中文解说。即使历史里已经分析过同一个项目，也不要复用旧文案；请结合最近几次解说，判断这次是否有新功能、热度变化、定位变化或值得重新关注的原因。表达要说人话，避免空泛夸奖，重点说明这个项目解决什么问题、适合谁、是否值得收藏或研究。';
 }
 
 function discover_setting_definitions(): array
 {
     return [
-        'discover_daily_enabled' => ['label' => '启用日报自动采集', 'type' => 'checkbox', 'default' => '1'],
-        'discover_weekly_enabled' => ['label' => '启用周榜自动采集', 'type' => 'checkbox', 'default' => '1'],
-        'discover_analyze_all' => ['label' => 'DeepSeek 处理全部候选', 'type' => 'checkbox', 'default' => '1'],
-        'discover_max_projects' => ['label' => 'DeepSeek 分析上限', 'type' => 'number', 'default' => '3'],
-        'discover_per_page' => ['label' => '每个平台/分类候选数量', 'type' => 'number', 'default' => '20'],
-        'discover_recent_days_daily' => ['label' => '日报 GitHub 搜索窗口', 'type' => 'number', 'default' => '3'],
-        'discover_recent_days_weekly' => ['label' => '周榜 GitHub 搜索窗口', 'type' => 'number', 'default' => '14'],
-        'discover_min_stars_general' => ['label' => '通用最低 Stars', 'type' => 'number', 'default' => '100'],
-        'discover_min_stars_created' => ['label' => '新项目最低 Stars', 'type' => 'number', 'default' => '20'],
-        'discover_min_stars_topic' => ['label' => 'Topic 最低 Stars', 'type' => 'number', 'default' => '50'],
-        'discover_min_stars_agent' => ['label' => 'Agent 最低 Stars', 'type' => 'number', 'default' => '30'],
-        'discover_extra_queries' => ['label' => '额外搜索语句', 'type' => 'textarea', 'default' => ''],
+        'discover_daily_enabled' => ['label' => '启用日报自动采集', 'type' => 'checkbox', 'default' => '1', 'description' => '关闭后 daily 定时任务会跳过。'],
+        'discover_weekly_enabled' => ['label' => '启用周榜自动采集', 'type' => 'checkbox', 'default' => '1', 'description' => '关闭后 weekly 定时任务会跳过。'],
+        'discover_analyze_all' => ['label' => 'DeepSeek 处理全部候选', 'type' => 'checkbox', 'default' => '1', 'description' => '开启后本轮抓到的候选都会进入 DeepSeek 解读。'],
+        'discover_max_projects' => ['label' => 'DeepSeek 分析上限', 'type' => 'number', 'default' => '3', 'description' => '仅在关闭“处理全部候选”时生效。'],
+        'discover_per_page' => ['label' => '每个平台/分类候选数量', 'type' => 'number', 'default' => '20', 'description' => '每个固定来源、分类或搜索语句最多抓多少候选。'],
+        'discover_recent_days_daily' => ['label' => '日报 GitHub 搜索窗口', 'type' => 'number', 'default' => '3', 'description' => 'GitHub Search 日榜向前搜索多少天。'],
+        'discover_recent_days_weekly' => ['label' => '周榜 GitHub 搜索窗口', 'type' => 'number', 'default' => '14', 'description' => 'GitHub Search 周榜向前搜索多少天。'],
+        'discover_min_stars_general' => ['label' => '通用最低 Stars', 'type' => 'number', 'default' => '100', 'description' => '综合搜索的最低 Stars。'],
+        'discover_min_stars_created' => ['label' => '新项目最低 Stars', 'type' => 'number', 'default' => '20', 'description' => '新创建项目搜索的最低 Stars。'],
+        'discover_min_stars_topic' => ['label' => 'Topic 最低 Stars', 'type' => 'number', 'default' => '50', 'description' => '普通 topic 搜索的最低 Stars。'],
+        'discover_min_stars_agent' => ['label' => 'Agent 最低 Stars', 'type' => 'number', 'default' => '30', 'description' => 'agent topic 搜索的最低 Stars。'],
+        'discover_extra_queries' => ['label' => '额外搜索语句', 'type' => 'textarea', 'default' => '', 'description' => '每行一条 GitHub Search 查询，可使用 {since}。'],
+        'deepseek_system_prompt' => ['label' => 'DeepSeek 系统提示词', 'type' => 'textarea', 'default' => default_deepseek_system_prompt(), 'description' => '控制 DeepSeek 的角色、环境约束和评分标准。'],
+        'deepseek_task_prompt' => ['label' => 'DeepSeek 解读任务提示词', 'type' => 'textarea', 'default' => default_deepseek_task_prompt(), 'description' => '控制每个项目解读的口吻、重点和判断方式；输出 JSON 字段结构由代码固定。'],
     ];
 }
 
@@ -425,14 +446,16 @@ function discover_settings(): array
             'label' => $definition['label'],
             'type' => $definition['type'],
             'value' => $definition['default'],
-            'description' => '',
+            'description' => isset($definition['description']) ? (string) $definition['description'] : '',
         ];
     }
     foreach ($rows as $row) {
         $key = (string) $row['setting_key'];
         if (isset($settings[$key])) {
             $settings[$key]['value'] = (string) $row['setting_value'];
-            $settings[$key]['description'] = (string) $row['description'];
+            if ((string) $row['description'] !== '') {
+                $settings[$key]['description'] = (string) $row['description'];
+            }
         }
     }
     return $settings;
@@ -481,6 +504,8 @@ function discover_public_config(): array
         'topics' => discover_fixed_topics(),
         'extra_queries' => discover_list_setting('discover_extra_queries'),
         'platforms' => discover_fixed_platforms(),
+        'deepseek_system_prompt' => app_setting('deepseek_system_prompt', default_deepseek_system_prompt()),
+        'deepseek_task_prompt' => app_setting('deepseek_task_prompt', default_deepseek_task_prompt()),
     ];
 }
 

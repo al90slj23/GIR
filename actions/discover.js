@@ -32,6 +32,8 @@ const defaultConfig = {
   topics: ["ai", "llm", "agent", "php"],
   extra_queries: [],
   platforms: ["github_trending", "github_search", "ossinsight", "trendshift", "reporank", "gitrepotrend"],
+  deepseek_system_prompt: defaultSystemPrompt(),
+  deepseek_task_prompt: defaultTaskPrompt(),
 };
 
 const seedTopics = [
@@ -168,6 +170,8 @@ async function loadDiscoverConfig() {
       topics: normalizeList(config.topics).length ? normalizeList(config.topics) : defaultConfig.topics,
       extra_queries: normalizeList(config.extra_queries),
       platforms: normalizeList(config.platforms).length ? normalizeList(config.platforms) : defaultConfig.platforms,
+      deepseek_system_prompt: String(config.deepseek_system_prompt || defaultConfig.deepseek_system_prompt).trim() || defaultConfig.deepseek_system_prompt,
+      deepseek_task_prompt: String(config.deepseek_task_prompt || defaultConfig.deepseek_task_prompt).trim() || defaultConfig.deepseek_task_prompt,
     };
   } catch (error) {
     console.warn(`Config error: ${error.message}; using defaults`);
@@ -591,7 +595,7 @@ async function getReadme(repo) {
   }
 }
 
-function systemPrompt() {
+function defaultSystemPrompt() {
   return [
     "你是一个帮助站长发现 GitHub 新项目的技术分析员。",
     "站长的部署环境是传统 PHP 7.2 + MySQL 5.1 虚拟主机，不能运行 Docker、Node/Python 常驻服务、本地模型或 WebSocket。",
@@ -602,6 +606,14 @@ function systemPrompt() {
     "maturity_score 衡量项目成熟度，综合 Stars、Forks、最近更新、文档完整度和社区活跃度。",
     "difficulty 衡量理解、部署、改造或复刻成本，只能输出 低、中、高。",
   ].join("\n");
+}
+
+function defaultTaskPrompt() {
+  return "为这次榜单命中生成一条新的中文解说。即使历史里已经分析过同一个项目，也不要复用旧文案；请结合最近几次解说，判断这次是否有新功能、热度变化、定位变化或值得重新关注的原因。表达要说人话，避免空泛夸奖，重点说明这个项目解决什么问题、适合谁、是否值得收藏或研究。";
+}
+
+function systemPrompt(config) {
+  return String(config.deepseek_system_prompt || defaultSystemPrompt()).trim() || defaultSystemPrompt();
 }
 
 function compactHistory(history) {
@@ -621,9 +633,9 @@ function compactHistory(history) {
   }));
 }
 
-function userPrompt(repo, readme, history = []) {
+function userPrompt(repo, readme, history = [], config = defaultConfig) {
   return JSON.stringify({
-    task: "为这次榜单命中生成一条新的中文解说。即使历史里已经分析过同一个项目，也不要复用旧文案；请结合最近几次解说，判断这次是否有新功能、热度变化、定位变化或值得重新关注的原因。",
+    task: String(config.deepseek_task_prompt || defaultTaskPrompt()).trim() || defaultTaskPrompt(),
     required_schema: {
       one_sentence: "一句话介绍",
       project_type: "工具/框架/游戏/Agent/UI/后端/数据集/其他",
@@ -680,7 +692,7 @@ async function fetchProjectHistory(fullName) {
   }
 }
 
-async function analyze(repo, readme, history = []) {
+async function analyze(repo, readme, history = [], config = defaultConfig) {
   const res = await fetchWithTimeout(`${env.deepseekBaseUrl.replace(/\/$/, "")}/v1/chat/completions`, {
     method: "POST",
     headers: {
@@ -692,8 +704,8 @@ async function analyze(repo, readme, history = []) {
       temperature: 0.2,
       response_format: { type: "json_object" },
       messages: [
-        { role: "system", content: systemPrompt() },
-        { role: "user", content: userPrompt(repo, readme, history) },
+        { role: "system", content: systemPrompt(config) },
+        { role: "user", content: userPrompt(repo, readme, history, config) },
       ],
     }),
   }, 90000);
@@ -782,7 +794,7 @@ async function main() {
     try {
       const history = await fetchProjectHistory(repo.full_name);
       const readme = await getReadme(repo);
-      const analysis = await analyze(repo, readme, history);
+      const analysis = await analyze(repo, readme, history, config);
       analyzedBatch.push(projectPayload(repo, analysis));
       analyzedCount++;
       if (analyzedBatch.length >= 20) {
