@@ -1,6 +1,7 @@
 const runType = process.env.RUN_TYPE || process.argv[2] || "daily";
 const periodType = runType === "weekly" ? "weekly" : runType === "manual" ? "manual" : "daily";
 const ingestBatchSize = Math.max(1, Number(process.env.INGEST_BATCH_SIZE || "1"));
+const seedMode = ["1", "true", "yes", "on"].includes(String(process.env.SEED_MODE || "").toLowerCase());
 
 const env = {
   githubToken: process.env.GITHUB_TOKEN || "",
@@ -32,6 +33,72 @@ const defaultConfig = {
   extra_queries: [],
   platforms: ["github_trending", "github_search", "ossinsight", "trendshift", "reporank", "gitrepotrend"],
 };
+
+const seedTopics = [
+  "ai",
+  "llm",
+  "agent",
+  "machine-learning",
+  "deep-learning",
+  "generative-ai",
+  "rag",
+  "chatgpt",
+  "php",
+  "laravel",
+  "wordpress",
+  "javascript",
+  "typescript",
+  "react",
+  "vue",
+  "nextjs",
+  "python",
+  "go",
+  "rust",
+  "java",
+  "devtools",
+  "cli",
+  "automation",
+  "productivity",
+  "self-hosted",
+  "cms",
+  "dashboard",
+  "monitoring",
+  "security",
+  "data-visualization",
+  "crawler",
+  "web-scraping",
+  "api",
+  "database",
+  "sqlite",
+  "mysql",
+  "game",
+  "education",
+  "finance",
+  "web3",
+];
+
+const seedExtraQueries = [
+  "language:PHP stars:>0 pushed:>{since}",
+  "language:JavaScript stars:>50 pushed:>{since}",
+  "language:TypeScript stars:>50 pushed:>{since}",
+  "language:Python stars:>50 pushed:>{since}",
+  "language:Go stars:>50 pushed:>{since}",
+  "language:Rust stars:>50 pushed:>{since}",
+  "topic:self-hosted stars:>20 pushed:>{since}",
+  "topic:dashboard stars:>20 pushed:>{since}",
+  "topic:cms stars:>20 pushed:>{since}",
+  "topic:admin-panel stars:>20 pushed:>{since}",
+  "topic:automation stars:>20 pushed:>{since}",
+  "topic:ai-agent stars:>10 pushed:>{since}",
+  "topic:rag stars:>10 pushed:>{since}",
+  "topic:developer-tools stars:>20 pushed:>{since}",
+  "topic:web-scraping stars:>20 pushed:>{since}",
+  "topic:data-visualization stars:>20 pushed:>{since}",
+  "topic:php stars:>0 created:>{since}",
+  "topic:ai stars:>0 created:>{since}",
+  "topic:agent stars:>0 created:>{since}",
+  "topic:llm stars:>0 created:>{since}",
+];
 
 const today = new Date().toISOString().slice(0, 10);
 
@@ -110,6 +177,23 @@ async function loadDiscoverConfig() {
 
 function platformEnabled(config, platform) {
   return config.platforms.includes(platform);
+}
+
+function applySeedConfig(config) {
+  if (!seedMode) return config;
+  return {
+    ...config,
+    analyze_all: true,
+    per_page: 100,
+    recent_days_daily: 365,
+    recent_days_weekly: 365,
+    min_stars_general: 0,
+    min_stars_created: 0,
+    min_stars_topic: 0,
+    min_stars_agent: 0,
+    topics: seedTopics,
+    extra_queries: [...new Set([...config.extra_queries, ...seedExtraQueries])],
+  };
 }
 
 function periodToSince() {
@@ -673,8 +757,8 @@ function projectPayload(repo, analysis) {
 }
 
 async function main() {
-  const config = await loadDiscoverConfig();
-  console.log(`Discover config: max=${config.max_projects}, per_page=${config.per_page}, platforms=${config.platforms.join(",")}, topics=${config.topics.join(",")}`);
+  const config = applySeedConfig(await loadDiscoverConfig());
+  console.log(`Discover config: mode=${seedMode ? "seed" : "normal"}, max=${config.max_projects}, per_page=${config.per_page}, platforms=${config.platforms.join(",")}, topics=${config.topics.join(",")}, extra_queries=${config.extra_queries.length}`);
   if (periodType === "daily" && config.daily_enabled === false) {
     console.log("Daily discover disabled by config; skipping");
     return;
