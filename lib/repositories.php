@@ -4,13 +4,13 @@ declare(strict_types=1);
 function ranking_platform_labels(): array
 {
     return [
-        'github' => 'GitHub',
-        'github_trending' => 'GitHub Trending',
-        'github_search' => 'GitHub Search',
-        'ossinsight' => 'OSSInsight',
-        'trendshift' => 'Trendshift',
-        'reporank' => 'RepoRank',
-        'gitrepotrend' => 'GitRepoTrend',
+        'github' => 'GitHub 搜索',
+        'github_trending' => 'GitHub 官方趋势',
+        'github_search' => 'GitHub 搜索榜',
+        'ossinsight' => 'OSSInsight 趋势',
+        'trendshift' => 'Trendshift 趋势',
+        'reporank' => 'RepoRank 排行',
+        'gitrepotrend' => 'GitRepoTrend 热度',
     ];
 }
 
@@ -18,6 +18,41 @@ function ranking_platform_label(string $platform): string
 {
     $labels = ranking_platform_labels();
     return $labels[$platform] ?? $platform;
+}
+
+function ranking_tag_labels(): array
+{
+    return [
+        'daily' => '日榜',
+        'weekly' => '周榜',
+        'momentum' => '动量榜',
+        'attention' => '关注榜',
+        'ai-ml' => 'AI / 机器学习',
+        'llm' => '大模型 / 生成式 AI',
+        'webdev' => 'Web 开发',
+        'devtools' => '开发工具',
+        'devops' => 'DevOps / 云服务',
+        'finance' => '金融 / 量化',
+        'crypto' => '加密 / Web3',
+        'security' => '安全',
+        'datascience' => '数据科学',
+        'mobile' => '移动开发',
+        'rust' => 'Rust',
+        'python' => 'Python',
+        'go' => 'Go',
+        '综合' => '综合',
+        '新项目' => '新项目',
+        'ai' => 'AI',
+        'agent' => 'Agent',
+        'php' => 'PHP',
+        '额外搜索语句' => '额外搜索',
+    ];
+}
+
+function ranking_tag_label(string $tag): string
+{
+    $labels = ranking_tag_labels();
+    return $labels[$tag] ?? $tag;
 }
 
 function available_ranking_platforms(string $periodType): array
@@ -278,7 +313,7 @@ function discover_platform_catalog(): array
     return [
         [
             'key' => 'github_trending',
-            'label' => 'GitHub Trending',
+            'label' => 'GitHub 官方趋势',
             'period' => 'daily / weekly',
             'limit' => '每周期最多 discover_per_page 个候选',
             'categories' => ['daily', 'weekly'],
@@ -286,7 +321,7 @@ function discover_platform_catalog(): array
         ],
         [
             'key' => 'ossinsight',
-            'label' => 'OSSInsight',
+            'label' => 'OSSInsight 趋势',
             'period' => 'past_24_hours / past_7_days',
             'limit' => '每周期最多 discover_per_page 个候选',
             'categories' => ['daily', 'weekly'],
@@ -294,7 +329,7 @@ function discover_platform_catalog(): array
         ],
         [
             'key' => 'trendshift',
-            'label' => 'Trendshift',
+            'label' => 'Trendshift 趋势',
             'period' => 'daily / weekly',
             'limit' => '每周期最多 discover_per_page 个候选',
             'categories' => ['daily', 'weekly'],
@@ -302,7 +337,7 @@ function discover_platform_catalog(): array
         ],
         [
             'key' => 'reporank',
-            'label' => 'RepoRank',
+            'label' => 'RepoRank 排行',
             'period' => 'momentum',
             'limit' => '最多 discover_per_page 个候选',
             'categories' => ['momentum'],
@@ -310,7 +345,7 @@ function discover_platform_catalog(): array
         ],
         [
             'key' => 'gitrepotrend',
-            'label' => 'GitRepoTrend',
+            'label' => 'GitRepoTrend 热度',
             'period' => 'attention',
             'limit' => '每分类最多 discover_per_page 个候选',
             'categories' => ['ai-ml', 'llm', 'webdev', 'devtools', 'devops', 'finance', 'crypto', 'security', 'datascience', 'mobile', 'rust', 'python', 'go'],
@@ -318,7 +353,7 @@ function discover_platform_catalog(): array
         ],
         [
             'key' => 'github_search',
-            'label' => 'GitHub Search',
+            'label' => 'GitHub 搜索榜',
             'period' => '日报最近 N 天 / 周榜最近 N 天',
             'limit' => '每条搜索最多 discover_per_page 个候选',
             'categories' => ['综合', '新项目', 'ai', 'llm', 'agent', 'php', '额外搜索语句'],

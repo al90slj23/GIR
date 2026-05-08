@@ -71,7 +71,7 @@ function render_project_card(array $row): void
 function render_github_project_card(array $row, int $rank): void
 {
     $platform = ranking_platform_label((string) ($row['source_platform'] ?? 'github'));
-    $tag = (string) ($row['source_tag'] ?? '综合');
+    $tag = ranking_tag_label((string) ($row['source_tag'] ?? '综合'));
     ?>
 <article class="project-card">
     <div class="project-top">
@@ -157,7 +157,7 @@ function render_tag_tabs(string $basePath, array $tags, string $activeTag, strin
     ], 'strlen'));
     ?>
 <div class="tabs tag-tabs">
-    <a class="<?= $activeTag === '' ? 'active' : '' ?>" href="<?= h($basePath) ?>?<?= h($allQuery) ?>">全部 tag</a>
+    <a class="<?= $activeTag === '' ? 'active' : '' ?>" href="<?= h($basePath) ?>?<?= h($allQuery) ?>">全部分类</a>
     <?php foreach ($tags as $tag): ?>
         <?php
         $value = (string) $tag['source_tag'];
@@ -169,7 +169,7 @@ function render_tag_tabs(string $basePath, array $tags, string $activeTag, strin
         ], 'strlen'));
         ?>
         <a class="<?= $activeTag === $value ? 'active' : '' ?>" href="<?= h($basePath) ?>?<?= h($query) ?>">
-            <?= h($value) ?> · <?= (int) $tag['total'] ?>
+            <?= h(ranking_tag_label($value)) ?> · <?= (int) $tag['total'] ?>
         </a>
     <?php endforeach; ?>
 </div>
