@@ -6,12 +6,12 @@ $date = isset($_GET['date']) ? preg_replace('/[^0-9\-]/', '', (string) $_GET['da
 $dates = recent_report_dates('daily', 14);
 $reports = $date ? reports_by_date('daily', $date, 30) : latest_reports('daily', 30);
 
-render_header('今日 AI 项目榜');
+render_header('今日 GitHub 灵感榜');
 ?>
 <div class="page-head">
     <div>
-        <h1>今日 AI 项目榜</h1>
-        <div class="muted">每天自动发现 GitHub 新项目，并用 AI 生成中文可读报告。</div>
+        <h1>今日 GitHub 灵感榜</h1>
+        <div class="muted">每天发现值得研究和学习的 GitHub 灵感项目。</div>
     </div>
 </div>
 
@@ -24,7 +24,7 @@ render_header('今日 AI 项目榜');
 <?php endif; ?>
 
 <?php if (!$reports): ?>
-    <div class="empty">还没有日报数据。完成 GitHub Actions 推送后，这里会显示项目榜。</div>
+    <div class="empty">还没有日报数据。完成 GitHub Actions 推送后，这里会显示灵感项目。</div>
 <?php else: ?>
     <div class="grid">
         <?php foreach ($reports as $row): ?>

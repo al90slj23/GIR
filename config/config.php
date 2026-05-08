@@ -40,7 +40,7 @@ function env_value(string $key, string $default = ''): string
 
 return [
     'app' => [
-        'name' => 'AI 项目侦探站',
+        'name' => 'GIR · 灵猎雷达',
         'base_url' => env_value('APP_BASE_URL', 'http://gir.likeheng.com'),
         'ingest_token' => env_value('APP_INGEST_TOKEN', 'change_me'),
         'trigger_token' => env_value('APP_TRIGGER_TOKEN', 'change_me'),

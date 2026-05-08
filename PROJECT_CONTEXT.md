@@ -478,7 +478,7 @@ OSSInsight
 
 优先级建议：
 
-1. 把站点品牌从“AI 项目侦探站”改成：
+1. 站点品牌已改成：
 
 ```text
 GIR · GitHub Idea Radar

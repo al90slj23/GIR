@@ -6,12 +6,12 @@ $date = isset($_GET['date']) ? preg_replace('/[^0-9\-]/', '', (string) $_GET['da
 $dates = recent_report_dates('weekly', 14);
 $reports = $date ? reports_by_date('weekly', $date, 40) : latest_reports('weekly', 40);
 
-render_header('本周 AI 项目榜');
+render_header('本周 GitHub 灵感榜');
 ?>
 <div class="page-head">
     <div>
-        <h1>本周 AI 项目榜</h1>
-        <div class="muted">按周聚合更值得研究和复刻的 GitHub 项目。</div>
+        <h1>本周 GitHub 灵感榜</h1>
+        <div class="muted">按周聚合更值得研究、学习和复刻的 GitHub 灵感项目。</div>
     </div>
 </div>
 
