@@ -1,0 +1,9 @@
+{
+  "name": "ai-project-detective-actions",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "discover": "node discover.js"
+  },
+  "dependencies": {}
+}
