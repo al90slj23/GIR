@@ -60,6 +60,19 @@ function recent_runs(int $limit = 20): array
     );
 }
 
+function all_app_settings(): array
+{
+    return db_all('SELECT * FROM app_settings ORDER BY setting_key ASC');
+}
+
+function update_app_setting(string $key, string $value): bool
+{
+    return db_exec(
+        'UPDATE app_settings SET setting_value = ?, updated_at = ? WHERE setting_key = ?',
+        [truncate_text($value, 5000), date('Y-m-d H:i:s'), truncate_text($key, 64)]
+    );
+}
+
 function upsert_project(array $item): int
 {
     $now = date('Y-m-d H:i:s');

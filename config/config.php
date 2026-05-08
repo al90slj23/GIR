@@ -44,6 +44,7 @@ return [
         'base_url' => env_value('APP_BASE_URL', 'http://gir.likeheng.com'),
         'ingest_token' => env_value('APP_INGEST_TOKEN', 'change_me'),
         'trigger_token' => env_value('APP_TRIGGER_TOKEN', 'change_me'),
+        'admin_token' => env_value('APP_ADMIN_TOKEN', env_value('APP_TRIGGER_TOKEN', 'change_me')),
         'timezone' => 'Asia/Shanghai',
     ],
     'db' => [

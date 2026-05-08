@@ -2,6 +2,8 @@
 require_once dirname(__DIR__) . '/lib/bootstrap.php';
 require_once dirname(__DIR__) . '/public/_layout.php';
 
+require_admin();
+
 $runs = recent_runs(30);
 
 render_header('后台');
@@ -15,8 +17,14 @@ render_header('后台');
 
 <section class="panel">
     <h2>手动触发</h2>
-    <p class="muted">接口已预留。正式启用前需要先加后台登录，避免把触发 token 暴露在页面里。</p>
-    <button class="button" type="button" disabled>等待接入后台登录</button>
+    <p class="muted">后台鉴权已启用。下一步可以把这里接到 GitHub workflow_dispatch。</p>
+    <button class="button" type="button" disabled>等待接入手动触发</button>
+</section>
+
+<section class="panel">
+    <h2>站点设置</h2>
+    <p class="muted">站点名称、导航文字和页面文案现在从数据库读取。</p>
+    <a class="button" href="/admin/settings.php">编辑站点设置</a>
 </section>
 
 <section class="panel">
