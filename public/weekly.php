@@ -4,7 +4,7 @@ require_once (is_file(__DIR__ . '/_layout.php') ? __DIR__ . '/_layout.php' : __D
 
 $date = isset($_GET['date']) ? preg_replace('/[^0-9\-]/', '', (string) $_GET['date']) : '';
 $view = isset($_GET['view']) && $_GET['view'] === 'deepseek' ? 'deepseek' : 'github';
-$platforms = available_ranking_platforms('weekly');
+$platforms = available_ranking_platforms('weekly', $date);
 $platform = isset($_GET['platform']) ? preg_replace('/[^a-z0-9_\-]/i', '', (string) $_GET['platform']) : '';
 if ($platform === '' && $platforms) {
     $platform = (string) $platforms[0]['source_platform'];
@@ -13,7 +13,7 @@ if ($platform === '') {
     $platform = 'github';
 }
 $tag = isset($_GET['tag']) ? truncate_text((string) $_GET['tag'], 64) : '';
-$tags = available_ranking_tags('weekly', $platform);
+$tags = available_ranking_tags('weekly', $platform, $date);
 $dates = recent_report_dates('weekly', 14);
 $reports = $date
     ? ($view === 'github' ? github_rank_reports_by_date('weekly', $date, 40, $platform, $tag) : reports_by_date('weekly', $date, 40, $platform, $tag))

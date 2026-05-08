@@ -55,29 +55,47 @@ function ranking_tag_label(string $tag): string
     return $labels[$tag] ?? $tag;
 }
 
-function available_ranking_platforms(string $periodType): array
+function report_date_filter_sql(string $periodType, string $date = ''): array
 {
+    if ($date !== '') {
+        return ['sql' => ' AND r.report_date = ?', 'params' => [$date]];
+    }
+    return [
+        'sql' => ' AND r.report_date = (SELECT MAX(report_date) FROM project_reports WHERE period_type = ?)',
+        'params' => [$periodType],
+    ];
+}
+
+function analyzed_report_sql(): string
+{
+    return " AND r.one_sentence <> ''";
+}
+
+function available_ranking_platforms(string $periodType, string $date = ''): array
+{
+    $dateFilter = report_date_filter_sql($periodType, $date);
     return db_all(
         'SELECT r.source_platform, COUNT(*) AS total
          FROM project_reports r
          INNER JOIN projects p ON p.id = r.project_id
-         WHERE r.period_type = ? AND p.is_hidden = 0
+         WHERE r.period_type = ? AND p.is_hidden = 0' . $dateFilter['sql'] . '
          GROUP BY r.source_platform
          ORDER BY total DESC, r.source_platform ASC',
-        [$periodType]
+        array_merge([$periodType], $dateFilter['params'])
     );
 }
 
-function available_ranking_tags(string $periodType, string $platform): array
+function available_ranking_tags(string $periodType, string $platform, string $date = ''): array
 {
+    $dateFilter = report_date_filter_sql($periodType, $date);
     return db_all(
         'SELECT r.source_tag, COUNT(*) AS total
          FROM project_reports r
          INNER JOIN projects p ON p.id = r.project_id
-         WHERE r.period_type = ? AND r.source_platform = ? AND p.is_hidden = 0
+         WHERE r.period_type = ? AND r.source_platform = ? AND p.is_hidden = 0' . $dateFilter['sql'] . '
          GROUP BY r.source_tag
          ORDER BY total DESC, r.source_tag ASC',
-        [$periodType, $platform]
+        array_merge([$periodType, $platform], $dateFilter['params'])
     );
 }
 
@@ -88,7 +106,7 @@ function latest_reports(string $periodType, int $limit = 20, string $platform = 
         'SELECT r.*, p.name, p.full_name, p.html_url, p.description, p.stars, p.forks, p.language, p.topics, p.pushed_at
          FROM project_reports r
          INNER JOIN projects p ON p.id = r.project_id
-         WHERE r.period_type = ? AND p.is_hidden = 0' . $filters['sql'] . '
+         WHERE r.period_type = ? AND p.is_hidden = 0' . analyzed_report_sql() . $filters['sql'] . '
          ORDER BY r.report_date DESC, r.php_fit_score DESC, r.useful_score DESC, p.stars DESC
          LIMIT ' . (int) $limit,
         array_merge([$periodType], $filters['params'])
@@ -116,7 +134,7 @@ function reports_by_date(string $periodType, string $date, int $limit = 30, stri
         'SELECT r.*, p.name, p.full_name, p.html_url, p.description, p.stars, p.forks, p.language, p.topics, p.pushed_at
          FROM project_reports r
          INNER JOIN projects p ON p.id = r.project_id
-         WHERE r.period_type = ? AND r.report_date = ? AND p.is_hidden = 0' . $filters['sql'] . '
+         WHERE r.period_type = ? AND r.report_date = ? AND p.is_hidden = 0' . analyzed_report_sql() . $filters['sql'] . '
          ORDER BY r.php_fit_score DESC, r.useful_score DESC, r.play_score DESC, p.stars DESC
          LIMIT ' . (int) $limit,
         array_merge([$periodType, $date], $filters['params'])

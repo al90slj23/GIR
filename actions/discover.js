@@ -404,9 +404,7 @@ async function sourceBuckets(config) {
   return buckets;
 }
 
-async function searchProjects(config) {
-  const buckets = await sourceBuckets(config);
-
+function selectProjectsFromBuckets(buckets, config) {
   const selected = [];
   const seen = new Set();
   const consumed = new Map();
@@ -450,6 +448,24 @@ async function searchProjects(config) {
     source_rank: repo.source_rank || index + 1,
     source_score: repo.source_score || scoreRepo(repo),
   }));
+}
+
+function rankingCandidatesFromBuckets(buckets) {
+  const candidates = [];
+  const seen = new Set();
+  for (const bucket of buckets) {
+    for (const repo of bucket) {
+      if (!repo?.full_name) continue;
+      const key = `${repo.source_platform || "github"}\n${repo.source_tag || "综合"}\n${repo.full_name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      candidates.push({
+        ...repo,
+        source_score: repo.source_score || scoreRepo(repo),
+      });
+    }
+  }
+  return candidates;
 }
 
 function scoreRepo(repo) {
@@ -563,9 +579,9 @@ async function ingestBatch(projects) {
   console.log(text);
 }
 
-async function ingest(projects) {
-  for (let index = 0; index < projects.length; index += ingestBatchSize) {
-    await ingestBatch(projects.slice(index, index + ingestBatchSize));
+async function ingest(projects, batchSize = ingestBatchSize) {
+  for (let index = 0; index < projects.length; index += batchSize) {
+    await ingestBatch(projects.slice(index, index + batchSize));
   }
 }
 
@@ -600,7 +616,14 @@ async function main() {
     console.log("Weekly discover disabled by config; skipping");
     return;
   }
-  const repos = await searchProjects(config);
+  const buckets = await sourceBuckets(config);
+  const rankingCandidates = rankingCandidatesFromBuckets(buckets);
+  if (rankingCandidates.length) {
+    console.log(`Ingesting raw ranking candidates: ${rankingCandidates.length}`);
+    await ingest(rankingCandidates.map((repo) => projectPayload(repo, { raw_rank_only: true })), 50);
+  }
+
+  const repos = selectProjectsFromBuckets(buckets, config);
   const projects = [];
   for (const repo of repos) {
     console.log(`Analyzing ${repo.full_name}`);

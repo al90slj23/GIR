@@ -24,6 +24,7 @@ if (!$projects) {
 $runId = create_run($runType, 'github_actions');
 $found = count($projects);
 $analyzed = 0;
+$stored = 0;
 $errors = [];
 
 foreach ($projects as $index => $item) {
@@ -33,10 +34,11 @@ foreach ($projects as $index => $item) {
     }
     $fullName = isset($item['full_name']) ? trim((string) $item['full_name']) : '';
     $analysis = isset($item['analysis']) && is_array($item['analysis']) ? $item['analysis'] : [];
-    if ($fullName === '' || !$analysis) {
-        $errors[] = "project {$index}: missing full_name or analysis";
+    if ($fullName === '') {
+        $errors[] = "project {$index}: missing full_name";
         continue;
     }
+    $rawRankOnly = !empty($analysis['raw_rank_only']);
 
     $projectId = upsert_project($item);
     if ($projectId <= 0) {
@@ -50,17 +52,21 @@ foreach ($projects as $index => $item) {
         'score' => isset($item['source_score']) ? (float) $item['source_score'] : 0,
     ];
     upsert_report($projectId, $runId, $periodType, $reportDate, $analysis, $source);
-    $analyzed++;
+    $stored++;
+    if (!$rawRankOnly && $analysis) {
+        $analyzed++;
+    }
 }
 
-$status = $errors ? ($analyzed > 0 ? 'partial' : 'failed') : 'success';
+$status = $errors ? ($stored > 0 ? 'partial' : 'failed') : 'success';
 finish_run($runId, $status, $found, $analyzed, implode("\n", $errors));
 
 json_response([
-    'ok' => $analyzed > 0,
+    'ok' => $stored > 0,
     'run_id' => $runId,
     'status' => $status,
     'total_found' => $found,
+    'total_stored' => $stored,
     'total_analyzed' => $analyzed,
     'errors' => $errors,
 ]);
