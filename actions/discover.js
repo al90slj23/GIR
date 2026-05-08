@@ -29,6 +29,7 @@ const defaultConfig = {
   min_stars_agent: 30,
   topics: ["ai", "llm", "agent"],
   extra_queries: [],
+  platforms: ["github_trending", "github_search", "ossinsight", "trendshift", "reporank", "gitrepotrend"],
 };
 
 const today = new Date().toISOString().slice(0, 10);
@@ -88,11 +89,121 @@ async function loadDiscoverConfig() {
       min_stars_agent: clampNumber(config.min_stars_agent, defaultConfig.min_stars_agent, 0, 1000000),
       topics: normalizeList(config.topics).length ? normalizeList(config.topics) : defaultConfig.topics,
       extra_queries: normalizeList(config.extra_queries),
+      platforms: normalizeList(config.platforms).length ? normalizeList(config.platforms) : defaultConfig.platforms,
     };
   } catch (error) {
     console.warn(`Config error: ${error.message}; using defaults`);
     return defaultConfig;
   }
+}
+
+function platformEnabled(config, platform) {
+  return config.platforms.includes(platform);
+}
+
+function periodToSince() {
+  return periodType === "weekly" ? "weekly" : "daily";
+}
+
+async function fetchText(url) {
+  const res = await fetch(url, {
+    headers: {
+      "Accept": "text/html,application/xhtml+xml,application/json",
+      "User-Agent": "GIR-Discover",
+    },
+  });
+  if (!res.ok) {
+    throw new Error(`${url} ${res.status}: ${await res.text()}`);
+  }
+  return res.text();
+}
+
+function uniqueFullNamesFromText(text) {
+  const names = [];
+  const seen = new Set();
+  const patterns = [
+    /href=["']\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)(?:["'#?\/])/g,
+    /https:\/\/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)/g,
+    /\b([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\b/g,
+  ];
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(text)) !== null) {
+      const fullName = match[1];
+      if (fullName.includes("github.com") || fullName.includes("topics/")) continue;
+      if (!seen.has(fullName)) {
+        seen.add(fullName);
+        names.push(fullName);
+      }
+    }
+  }
+  return names;
+}
+
+async function repoDetails(fullName) {
+  const repo = await githubJson(`https://api.github.com/repos/${fullName}`);
+  if (repo.archived || repo.disabled || repo.fork) return null;
+  return repo;
+}
+
+async function hydrateCandidates(fullNames, platform, tag, limit) {
+  const bucket = [];
+  let rank = 0;
+  for (const fullName of fullNames.slice(0, limit)) {
+    try {
+      const repo = await repoDetails(fullName);
+      if (!repo) continue;
+      rank++;
+      bucket.push({
+        ...repo,
+        source_platform: platform,
+        source_tag: tag,
+        source_rank: rank,
+        source_score: scoreRepo(repo),
+      });
+    } catch (error) {
+      console.warn(`Hydrate failed ${fullName}: ${error.message}`);
+    }
+  }
+  return bucket;
+}
+
+async function githubTrendingBucket(config) {
+  const since = periodToSince();
+  const text = await fetchText(`https://github.com/trending?since=${encodeURIComponent(since)}`);
+  return hydrateCandidates(uniqueFullNamesFromText(text), "github_trending", since === "weekly" ? "weekly" : "daily", config.per_page);
+}
+
+async function ossInsightBucket(config) {
+  const period = periodType === "weekly" ? "past_7_days" : "past_24_hours";
+  const url = `https://api.ossinsight.io/v1/trends/repos/?period=${period}&language=All`;
+  const res = await fetch(url, { headers: { "Accept": "application/json", "User-Agent": "GIR-Discover" } });
+  if (!res.ok) {
+    throw new Error(`OSSInsight ${res.status}: ${await res.text()}`);
+  }
+  const json = await res.json();
+  const rows = json?.data?.rows || json?.data || json?.repos || json?.items || [];
+  const fullNames = [];
+  for (const row of rows) {
+    const fullName = row.repo_name || row.full_name || row.repo || row.repository || row.name;
+    if (typeof fullName === "string" && fullName.includes("/")) fullNames.push(fullName);
+  }
+  return hydrateCandidates(fullNames, "ossinsight", periodType === "weekly" ? "weekly" : "daily", config.per_page);
+}
+
+async function trendshiftBucket(config) {
+  const text = await fetchText("https://trendshift.io/");
+  return hydrateCandidates(uniqueFullNamesFromText(text), "trendshift", periodType === "weekly" ? "weekly" : "daily", config.per_page);
+}
+
+async function repoRankBucket(config) {
+  const text = await fetchText("https://reporank.co/");
+  return hydrateCandidates(uniqueFullNamesFromText(text), "reporank", "momentum", config.per_page);
+}
+
+async function gitRepoTrendBucket(config) {
+  const text = await fetchText("https://gitrepotrend.com/");
+  return hydrateCandidates(uniqueFullNamesFromText(text), "gitrepotrend", "attention", config.per_page);
 }
 
 function buildQuerySpecs(config) {
@@ -130,7 +241,7 @@ async function githubJson(url) {
   return res.json();
 }
 
-async function searchProjects(config) {
+async function githubSearchBuckets(config) {
   const specs = buildQuerySpecs(config);
   const buckets = [];
   for (const spec of specs) {
@@ -156,6 +267,38 @@ async function searchProjects(config) {
     }
     buckets.push(bucket);
   }
+  return buckets;
+}
+
+async function sourceBuckets(config) {
+  const loaders = [
+    ["github_trending", githubTrendingBucket],
+    ["github_search", githubSearchBuckets],
+    ["ossinsight", ossInsightBucket],
+    ["trendshift", trendshiftBucket],
+    ["reporank", repoRankBucket],
+    ["gitrepotrend", gitRepoTrendBucket],
+  ];
+  const buckets = [];
+  for (const [platform, loader] of loaders) {
+    if (!platformEnabled(config, platform)) continue;
+    try {
+      const loaded = await loader(config);
+      if (Array.isArray(loaded[0])) {
+        buckets.push(...loaded.filter((bucket) => bucket.length));
+      } else if (loaded.length) {
+        buckets.push(loaded);
+      }
+      console.log(`Loaded ${platform}: ${Array.isArray(loaded[0]) ? loaded.reduce((sum, bucket) => sum + bucket.length, 0) : loaded.length}`);
+    } catch (error) {
+      console.warn(`Source failed ${platform}: ${error.message}`);
+    }
+  }
+  return buckets;
+}
+
+async function searchProjects(config) {
+  const buckets = await sourceBuckets(config);
 
   const selected = [];
   const seen = new Set();
@@ -326,7 +469,7 @@ function projectPayload(repo, analysis) {
 
 async function main() {
   const config = await loadDiscoverConfig();
-  console.log(`Discover config: max=${config.max_projects}, per_page=${config.per_page}, topics=${config.topics.join(",")}`);
+  console.log(`Discover config: max=${config.max_projects}, per_page=${config.per_page}, platforms=${config.platforms.join(",")}, topics=${config.topics.join(",")}`);
   const repos = await searchProjects(config);
   const projects = [];
   for (const repo of repos) {

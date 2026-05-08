@@ -145,3 +145,6 @@ VALUES ('discover_topics', 'ai,llm,agent', '采集 topic，逗号或换行分隔
 
 INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
 VALUES ('discover_extra_queries', '', '额外 GitHub 搜索语句，每行一条，可使用 {since}', NOW());
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
+VALUES ('discover_platforms', 'github_trending,github_search,ossinsight,trendshift,reporank,gitrepotrend', '启用的排行平台，逗号或换行分隔', NOW());

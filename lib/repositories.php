@@ -5,9 +5,12 @@ function ranking_platform_labels(): array
 {
     return [
         'github' => 'GitHub',
+        'github_trending' => 'GitHub Trending',
+        'github_search' => 'GitHub Search',
         'ossinsight' => 'OSSInsight',
         'trendshift' => 'Trendshift',
         'reporank' => 'RepoRank',
+        'gitrepotrend' => 'GitRepoTrend',
     ];
 }
 
@@ -264,6 +267,7 @@ function discover_setting_definitions(): array
         'discover_min_stars_agent' => ['label' => 'Agent 最低 Stars', 'type' => 'number', 'default' => '30'],
         'discover_topics' => ['label' => '采集 Topics', 'type' => 'textarea', 'default' => 'ai,llm,agent'],
         'discover_extra_queries' => ['label' => '额外搜索语句', 'type' => 'textarea', 'default' => ''],
+        'discover_platforms' => ['label' => '启用排行平台', 'type' => 'textarea', 'default' => 'github_trending,github_search,ossinsight,trendshift,reporank,gitrepotrend'],
     ];
 }
 
@@ -326,6 +330,7 @@ function discover_public_config(): array
         'min_stars_agent' => discover_int_setting('discover_min_stars_agent', 30, 0, 1000000),
         'topics' => discover_list_setting('discover_topics'),
         'extra_queries' => discover_list_setting('discover_extra_queries'),
+        'platforms' => discover_list_setting('discover_platforms'),
     ];
 }
 
