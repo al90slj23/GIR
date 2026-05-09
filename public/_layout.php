@@ -208,7 +208,8 @@ function render_deepseek_progress_panel(): void
 {
     $progress = public_progress_summary();
     $focus = $progress['focus'];
-    $percent = (int) ($focus['percent'] ?? 0);
+    $percent = (float) ($focus['percent'] ?? 0);
+    $percentText = rtrim(rtrim(number_format($percent, 1, '.', ''), '0'), '.');
     $active = !empty($progress['active']);
     $platforms = $progress['platforms'];
     ?>
@@ -216,15 +217,15 @@ function render_deepseek_progress_panel(): void
     <div class="progress-panel-top">
         <div>
             <div class="progress-kicker">DeepSeek 解读进度</div>
-            <h2 data-progress-title><?= h($focus['label']) ?> · <?= $percent ?>%</h2>
+            <h2 data-progress-title><?= h($focus['label']) ?> · <?= h($percentText) ?>%</h2>
         </div>
         <span class="progress-status <?= $active ? 'is-active' : 'is-idle' ?>" data-progress-status><?= $active ? '正在更新' : '最近更新' ?></span>
     </div>
-    <div class="progress-meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= $percent ?>">
-        <span data-progress-bar style="width: <?= $percent ?>%"></span>
+    <div class="progress-meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= h($percentText) ?>">
+        <span data-progress-bar style="width: <?= h($percentText) ?>%"></span>
     </div>
     <div class="progress-meta">
-        <span><strong data-progress-percent><?= $percent ?>%</strong> 完成</span>
+        <span><strong data-progress-percent><?= h($percentText) ?>%</strong> 完成</span>
         <span>已解读 <strong data-progress-analyzed><?= (int) ($focus['analyzed'] ?? 0) ?></strong></span>
         <span>原始候选 <strong data-progress-raw><?= (int) ($focus['raw_rank'] ?? 0) ?></strong></span>
         <span data-progress-date><?= h((string) ($progress['report_date'] ?: '-')) ?></span>

@@ -449,7 +449,7 @@ function public_progress_summary(): array
         foreach ($rows as $row) {
             $rawRank = (int) ($row['raw_rank'] ?? 0);
             $analyzed = (int) ($row['analyzed'] ?? 0);
-            $percent = $rawRank > 0 ? (int) floor(min(100, ($analyzed / $rawRank) * 100)) : ($analyzed > 0 ? 100 : 0);
+            $percent = $rawRank > 0 ? round(min(100, ($analyzed / $rawRank) * 100), 1) : ($analyzed > 0 ? 100 : 0);
             $platform = (string) ($row['source_platform'] ?? '');
             $platforms[] = [
                 'source_platform' => $platform,
