@@ -13,7 +13,7 @@ const githubSearchSpecLimit = Math.max(0, Number(process.env.GITHUB_SEARCH_SPEC_
 const seedMode = ["1", "true", "yes", "on"].includes(String(process.env.SEED_MODE || "").toLowerCase());
 
 const env = {
-  githubToken: process.env.GITHUB_SEARCH_TOKEN || process.env.GH_PAT || process.env.GITHUB_TOKEN || "",
+  githubToken: process.env.GIR_GITHUB_SEARCH_TOKEN || process.env.GH_PAT || process.env.GITHUB_TOKEN || "",
   deepseekKey: process.env.DEEPSEEK_API_KEY || "",
   deepseekBaseUrl: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com",
   deepseekModel: process.env.DEEPSEEK_MODEL || "deepseek-chat",

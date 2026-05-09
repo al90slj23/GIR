@@ -78,9 +78,9 @@ APP_TRIGGER_TOKEN
 DEEPSEEK_API_KEY
 DEEPSEEK_BASE_URL
 DEEPSEEK_MODEL
-GITHUB_SEARCH_TOKEN
+GIR_GITHUB_SEARCH_TOKEN
 ```
 
-`GITHUB_SEARCH_TOKEN` 用于 GitHub Search 补跑，建议使用只授权本仓库的 fine-grained PAT，避免 Actions 内置安装 token 被搜索接口限流。
+`GIR_GITHUB_SEARCH_TOKEN` 用于 GitHub Search 补跑，建议使用只授权本仓库的 fine-grained PAT，避免 Actions 内置安装 token 被搜索接口限流。
 
 探针文件 `x.php`、`mysql_probe.php` 不参与自动部署，只在需要诊断主机环境时手动上传。
