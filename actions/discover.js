@@ -5,16 +5,22 @@ const rawIngestBatchSize = Math.max(1, Number(process.env.RAW_INGEST_BATCH_SIZE 
 const analysisIngestBatchSize = Math.max(1, Number(process.env.ANALYSIS_INGEST_BATCH_SIZE || "20"));
 const requestDelayMs = Math.max(0, Number(process.env.REQUEST_DELAY_MS || "0"));
 const ingestDelayMs = Math.max(0, Number(process.env.INGEST_DELAY_MS || "0"));
+const githubSearchDelayMs = Math.max(0, Number(process.env.GITHUB_SEARCH_DELAY_MS || "3500"));
+const githubRateLimitRetries = Math.max(0, Number(process.env.GITHUB_RATE_LIMIT_RETRIES || "2"));
+const githubMaxRateLimitWaitMs = Math.max(0, Number(process.env.GITHUB_MAX_RATE_LIMIT_WAIT_MS || "60000"));
+const githubSearchSpecOffset = Math.max(0, Number(process.env.GITHUB_SEARCH_SPEC_OFFSET || "0"));
+const githubSearchSpecLimit = Math.max(0, Number(process.env.GITHUB_SEARCH_SPEC_LIMIT || "0"));
 const seedMode = ["1", "true", "yes", "on"].includes(String(process.env.SEED_MODE || "").toLowerCase());
 
 const env = {
-  githubToken: process.env.GITHUB_TOKEN || "",
+  githubToken: process.env.GITHUB_SEARCH_TOKEN || process.env.GH_PAT || process.env.GITHUB_TOKEN || "",
   deepseekKey: process.env.DEEPSEEK_API_KEY || "",
   deepseekBaseUrl: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com",
   deepseekModel: process.env.DEEPSEEK_MODEL || "deepseek-chat",
   ingestUrl: process.env.APP_INGEST_URL || "",
   ingestToken: process.env.APP_INGEST_TOKEN || "",
   configUrl: process.env.APP_CONFIG_URL || "",
+  platformOverride: process.env.DISCOVER_PLATFORMS || "",
 };
 
 for (const [key, value] of Object.entries(env)) {
@@ -108,11 +114,15 @@ const seedExtraQueries = [
 
 const today = new Date().toISOString().slice(0, 10);
 
-const ghHeaders = {
-  "Accept": "application/vnd.github+json",
-  "User-Agent": "GIR-Discover",
-  ...(env.githubToken ? { "Authorization": `Bearer ${env.githubToken}` } : {}),
-};
+function githubHeaders(token = env.githubToken) {
+  return {
+    "Accept": "application/vnd.github+json",
+    "User-Agent": "GIR-Discover",
+    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+  };
+}
+
+const ghHeaders = githubHeaders();
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -163,6 +173,9 @@ async function loadDiscoverConfig() {
     }
     const data = await res.json();
     const config = data?.config || {};
+    const platforms = normalizeList(env.platformOverride).length
+      ? normalizeList(env.platformOverride)
+      : (normalizeList(config.platforms).length ? normalizeList(config.platforms) : defaultConfig.platforms);
     return {
       daily_enabled: config.daily_enabled !== false,
       weekly_enabled: config.weekly_enabled !== false,
@@ -177,7 +190,7 @@ async function loadDiscoverConfig() {
       min_stars_agent: clampNumber(config.min_stars_agent, defaultConfig.min_stars_agent, 0, 1000000),
       topics: normalizeList(config.topics).length ? normalizeList(config.topics) : defaultConfig.topics,
       extra_queries: normalizeList(config.extra_queries),
-      platforms: normalizeList(config.platforms).length ? normalizeList(config.platforms) : defaultConfig.platforms,
+      platforms,
       deepseek_system_prompt: String(config.deepseek_system_prompt || defaultConfig.deepseek_system_prompt).trim() || defaultConfig.deepseek_system_prompt,
       deepseek_task_prompt: String(config.deepseek_task_prompt || defaultConfig.deepseek_task_prompt).trim() || defaultConfig.deepseek_task_prompt,
     };
@@ -206,6 +219,12 @@ function applySeedConfig(config) {
     topics: seedTopics,
     extra_queries: [...new Set([...config.extra_queries, ...seedExtraQueries])],
   };
+}
+
+function applyRuntimeOverrides(config) {
+  const platforms = normalizeList(env.platformOverride);
+  if (!platforms.length) return config;
+  return { ...config, platforms };
 }
 
 function periodToSince() {
@@ -455,24 +474,72 @@ function buildQuerySpecs(config) {
   });
 }
 
-async function githubJson(url) {
-  const res = await fetch(url, { headers: ghHeaders });
-  if (!res.ok) {
-    throw new Error(`GitHub API ${res.status}: ${await res.text()}`);
+function githubRateLimitWaitMs(res, text) {
+  const retryAfter = Number(res.headers.get("retry-after") || "0");
+  if (Number.isFinite(retryAfter) && retryAfter > 0) {
+    return retryAfter * 1000;
   }
-  return res.json();
+
+  const remaining = Number(res.headers.get("x-ratelimit-remaining") || "NaN");
+  const reset = Number(res.headers.get("x-ratelimit-reset") || "0");
+  if (remaining === 0 && reset > 0) {
+    return Math.max(0, reset * 1000 - Date.now() + 2500);
+  }
+
+  if (/rate limit|secondary rate|too many requests/i.test(text)) {
+    return 30000;
+  }
+  return 0;
+}
+
+async function githubJson(url, options = {}) {
+  const retries = Number.isFinite(options.retries) ? options.retries : githubRateLimitRetries;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const res = await fetch(url, { headers: options.headers || ghHeaders });
+    if (res.ok) {
+      return res.json();
+    }
+
+    const text = await res.text();
+    const waitMs = githubRateLimitWaitMs(res, text);
+    if ((res.status === 403 || res.status === 429) && waitMs > 0 && waitMs <= githubMaxRateLimitWaitMs && attempt < retries) {
+      console.warn(`GitHub API ${res.status}: rate limited, waiting ${Math.ceil(waitMs / 1000)}s before retry ${attempt + 1}/${retries}`);
+      await sleep(waitMs);
+      continue;
+    }
+
+    const error = new Error(`GitHub API ${res.status}: ${text}`);
+    error.status = res.status;
+    error.rateLimited = waitMs > 0;
+    throw error;
+  }
+  throw new Error(`GitHub API failed: ${url}`);
 }
 
 async function githubSearchBuckets(config) {
   const specs = buildQuerySpecs(config);
+  const scopedSpecs = githubSearchSpecLimit > 0
+    ? specs.slice(githubSearchSpecOffset, githubSearchSpecOffset + githubSearchSpecLimit)
+    : specs.slice(githubSearchSpecOffset);
   const buckets = [];
-  for (const spec of specs) {
+  console.log(`GitHub search specs: total=${specs.length}, offset=${githubSearchSpecOffset}, limit=${githubSearchSpecLimit || "all"}, running=${scopedSpecs.length}`);
+  for (const [index, spec] of scopedSpecs.entries()) {
     const url = new URL("https://api.github.com/search/repositories");
     url.searchParams.set("q", spec.query);
     url.searchParams.set("sort", "stars");
     url.searchParams.set("order", "desc");
     url.searchParams.set("per_page", String(config.per_page));
-    const data = await githubJson(url.toString());
+    let data;
+    try {
+      data = await githubJson(url.toString());
+    } catch (error) {
+      if (error.rateLimited) {
+        console.warn(`GitHub search rate limited at spec ${githubSearchSpecOffset + index + 1}/${specs.length}; returning ${buckets.length} buckets already loaded`);
+        break;
+      }
+      console.warn(`GitHub search failed ${spec.tag}: ${error.message}`);
+      continue;
+    }
     const bucket = [];
     let queryRank = 0;
     for (const repo of data.items || []) {
@@ -488,6 +555,9 @@ async function githubSearchBuckets(config) {
       });
     }
     buckets.push(bucket);
+    if (githubSearchDelayMs > 0 && index + 1 < scopedSpecs.length) {
+      await sleep(githubSearchDelayMs);
+    }
   }
   return buckets;
 }
@@ -780,7 +850,7 @@ function projectPayload(repo, analysis) {
 }
 
 async function main() {
-  const config = applySeedConfig(await loadDiscoverConfig());
+  const config = applySeedConfig(applyRuntimeOverrides(await loadDiscoverConfig()));
   console.log(`Discover config: mode=${seedMode ? "seed" : "normal"}, max=${config.max_projects}, per_page=${config.per_page}, platforms=${config.platforms.join(",")}, topics=${config.topics.join(",")}, extra_queries=${config.extra_queries.length}`);
   if (periodType === "daily" && config.daily_enabled === false) {
     console.log("Daily discover disabled by config; skipping");
