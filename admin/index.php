@@ -64,6 +64,12 @@ render_header('后台');
 </section>
 
 <section class="panel">
+    <h2>数据统计</h2>
+    <p class="muted">查看项目库总量、DeepSeek 解读量、各平台规模和最近采集运行。</p>
+    <a class="button" href="/admin/stats.php">查看统计</a>
+</section>
+
+<section class="panel">
     <h2>采集设置</h2>
     <p class="muted">调整关键词、topic、stars 门槛和每次分析数量，下一次 Actions 自动生效。</p>
     <a class="button" href="/admin/discovery.php">编辑采集设置</a>

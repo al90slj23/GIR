@@ -346,6 +346,78 @@ h2 {
   white-space: pre-wrap;
 }
 
+.section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.section-head.compact {
+  margin-bottom: 10px;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.stat-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 253, 248, .9);
+  padding: 18px;
+  box-shadow: var(--shadow-sm);
+}
+
+.stat-label {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.stat-value {
+  margin: 5px 0 2px;
+  color: var(--ink);
+  font-size: 34px;
+  line-height: 1.08;
+  font-weight: 780;
+}
+
+.timeline {
+  display: grid;
+  gap: 16px;
+}
+
+.timeline-item {
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  gap: 14px;
+}
+
+.timeline-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(15, 118, 110, .28);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  width: 34px;
+  height: 34px;
+  color: var(--accent-strong);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.timeline-body {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+  padding: 16px;
+}
+
 .dates,
 .tabs {
   display: flex;
@@ -634,8 +706,14 @@ select {
   }
 
   .setting-row,
-  .project-admin-form {
+  .project-admin-form,
+  .stat-grid,
+  .timeline-item {
     grid-template-columns: 1fr;
+  }
+
+  .section-head {
+    flex-direction: column;
   }
 
   .project-actions {

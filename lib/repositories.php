@@ -223,6 +223,67 @@ function recent_runs(int $limit = 20): array
     );
 }
 
+function admin_stats(): array
+{
+    $projectTotals = db_one(
+        'SELECT COUNT(*) AS total,
+                SUM(CASE WHEN is_hidden = 0 THEN 1 ELSE 0 END) AS visible,
+                SUM(CASE WHEN is_hidden = 1 THEN 1 ELSE 0 END) AS hidden
+         FROM projects'
+    );
+    $reportTotals = db_one(
+        'SELECT COUNT(*) AS total,
+                SUM(CASE WHEN raw_rank_only = 0 AND one_sentence <> "" THEN 1 ELSE 0 END) AS analyzed,
+                SUM(CASE WHEN raw_rank_only = 1 THEN 1 ELSE 0 END) AS raw_rank
+         FROM project_reports'
+    );
+
+    return [
+        'projects' => [
+            'total' => (int) ($projectTotals['total'] ?? 0),
+            'visible' => (int) ($projectTotals['visible'] ?? 0),
+            'hidden' => (int) ($projectTotals['hidden'] ?? 0),
+        ],
+        'reports' => [
+            'total' => (int) ($reportTotals['total'] ?? 0),
+            'analyzed' => (int) ($reportTotals['analyzed'] ?? 0),
+            'raw_rank' => (int) ($reportTotals['raw_rank'] ?? 0),
+        ],
+        'platforms' => db_all(
+            'SELECT source_platform,
+                    COUNT(*) AS total,
+                    SUM(CASE WHEN raw_rank_only = 0 AND one_sentence <> "" THEN 1 ELSE 0 END) AS analyzed,
+                    SUM(CASE WHEN raw_rank_only = 1 THEN 1 ELSE 0 END) AS raw_rank,
+                    COUNT(DISTINCT project_id) AS projects
+             FROM project_reports
+             GROUP BY source_platform
+             ORDER BY total DESC, source_platform ASC'
+        ),
+        'tags' => db_all(
+            'SELECT source_platform, source_tag,
+                    COUNT(*) AS total,
+                    SUM(CASE WHEN raw_rank_only = 0 AND one_sentence <> "" THEN 1 ELSE 0 END) AS analyzed,
+                    SUM(CASE WHEN raw_rank_only = 1 THEN 1 ELSE 0 END) AS raw_rank
+             FROM project_reports
+             GROUP BY source_platform, source_tag
+             ORDER BY total DESC, source_platform ASC, source_tag ASC
+             LIMIT 80'
+        ),
+        'dates' => db_all(
+            'SELECT report_date,
+                    COUNT(*) AS total,
+                    SUM(CASE WHEN raw_rank_only = 0 AND one_sentence <> "" THEN 1 ELSE 0 END) AS analyzed,
+                    SUM(CASE WHEN raw_rank_only = 1 THEN 1 ELSE 0 END) AS raw_rank,
+                    COUNT(DISTINCT project_id) AS projects
+             FROM project_reports
+             GROUP BY report_date
+             ORDER BY report_date DESC
+             LIMIT 30'
+        ),
+        'runs' => recent_runs(20),
+    ];
+}
+
 function admin_project_statuses(): array
 {
     return [
