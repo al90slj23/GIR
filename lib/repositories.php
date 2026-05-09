@@ -468,12 +468,25 @@ function public_progress_summary(): array
     $latestRunRow = db_one('SELECT * FROM runs ORDER BY started_at DESC, id DESC LIMIT 1');
     $latestAt = (string) ($focus['latest_at'] ?? '');
     $recentSeconds = $latestAt !== '' ? time() - (int) strtotime($latestAt) : 999999;
-    $active = ($latestRunRow && (string) ($latestRunRow['status'] ?? '') === 'started') || ($latestAt !== '' && $recentSeconds >= 0 && $recentSeconds <= 20 * 60);
+    $latestRunTimestamp = 0;
+    if ($latestRunRow) {
+        foreach (['updated_at', 'finished_at', 'started_at'] as $timeKey) {
+            $timestamp = isset($latestRunRow[$timeKey]) ? (int) strtotime((string) $latestRunRow[$timeKey]) : 0;
+            if ($timestamp > $latestRunTimestamp) {
+                $latestRunTimestamp = $timestamp;
+            }
+        }
+    }
+    $runRecentSeconds = $latestRunTimestamp > 0 ? time() - $latestRunTimestamp : 999999;
+    $active = ($latestRunRow && (string) ($latestRunRow['status'] ?? '') === 'started')
+        || ($latestAt !== '' && $recentSeconds >= 0 && $recentSeconds <= 20 * 60)
+        || ($runRecentSeconds >= 0 && $runRecentSeconds <= 20 * 60);
     $latestRun = $latestRunRow ? [
         'status' => (string) ($latestRunRow['status'] ?? ''),
         'run_type' => (string) ($latestRunRow['run_type'] ?? ''),
         'started_at' => (string) ($latestRunRow['started_at'] ?? ''),
         'finished_at' => (string) ($latestRunRow['finished_at'] ?? ''),
+        'updated_at' => (string) ($latestRunRow['updated_at'] ?? ''),
         'total_found' => (int) ($latestRunRow['total_found'] ?? 0),
         'total_analyzed' => (int) ($latestRunRow['total_analyzed'] ?? 0),
         'source' => (string) ($latestRunRow['source'] ?? ''),
