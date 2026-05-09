@@ -66,6 +66,78 @@ function report_date_filter_sql(string $periodType, string $date = ''): array
     ];
 }
 
+function report_date_range_options(): array
+{
+    return [
+        'today' => '今天',
+        'yesterday' => '昨天',
+        '3d' => '最近三天',
+        '7d' => '最近一周',
+        '30d' => '最近一月',
+        '365d' => '最近一年',
+        'custom' => '自定义时间',
+    ];
+}
+
+function sanitize_report_date(string $value): string
+{
+    $date = preg_replace('/[^0-9\-]/', '', $value);
+    if (!is_string($date) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+        return '';
+    }
+    return $date;
+}
+
+function report_date_range(string $range, string $startDate = '', string $endDate = ''): array
+{
+    $range = array_key_exists($range, report_date_range_options()) ? $range : 'today';
+    $today = date('Y-m-d');
+
+    if ($range === 'custom') {
+        $start = sanitize_report_date($startDate);
+        $end = sanitize_report_date($endDate);
+        if ($start === '' && $end === '') {
+            $start = $today;
+            $end = $today;
+        } elseif ($start === '') {
+            $start = $end;
+        } elseif ($end === '') {
+            $end = $start;
+        }
+        if ($start > $end) {
+            $tmp = $start;
+            $start = $end;
+            $end = $tmp;
+        }
+        return ['range' => $range, 'start' => $start, 'end' => $end, 'label' => $start . ' 至 ' . $end];
+    }
+
+    $days = [
+        'today' => 1,
+        'yesterday' => 1,
+        '3d' => 3,
+        '7d' => 7,
+        '30d' => 30,
+        '365d' => 365,
+    ];
+    if ($range === 'yesterday') {
+        $date = date('Y-m-d', strtotime('-1 day'));
+        return ['range' => $range, 'start' => $date, 'end' => $date, 'label' => report_date_range_options()[$range]];
+    }
+
+    $span = $days[$range] ?? 1;
+    $start = date('Y-m-d', strtotime('-' . ($span - 1) . ' days'));
+    return ['range' => $range, 'start' => $start, 'end' => $today, 'label' => report_date_range_options()[$range]];
+}
+
+function report_date_range_filter_sql(array $dateRange): array
+{
+    return [
+        'sql' => ' AND r.report_date BETWEEN ? AND ?',
+        'params' => [(string) $dateRange['start'], (string) $dateRange['end']],
+    ];
+}
+
 function analyzed_report_sql(): string
 {
     return " AND r.raw_rank_only = 0 AND r.one_sentence <> ''";
@@ -90,9 +162,37 @@ function available_ranking_platforms(string $periodType, string $date = ''): arr
     );
 }
 
+function available_ranking_platforms_by_range(string $periodType, array $dateRange): array
+{
+    $dateFilter = report_date_range_filter_sql($dateRange);
+    return db_all(
+        'SELECT r.source_platform, COUNT(*) AS total
+         FROM project_reports r
+         INNER JOIN projects p ON p.id = r.project_id
+         WHERE r.period_type = ? AND p.is_hidden = 0' . raw_rank_report_sql() . $dateFilter['sql'] . '
+         GROUP BY r.source_platform
+         ORDER BY total DESC, r.source_platform ASC',
+        array_merge([$periodType], $dateFilter['params'])
+    );
+}
+
 function available_ranking_tags(string $periodType, string $platform, string $date = ''): array
 {
     $dateFilter = report_date_filter_sql($periodType, $date);
+    return db_all(
+        'SELECT r.source_tag, COUNT(*) AS total
+         FROM project_reports r
+         INNER JOIN projects p ON p.id = r.project_id
+         WHERE r.period_type = ? AND r.source_platform = ? AND p.is_hidden = 0' . raw_rank_report_sql() . $dateFilter['sql'] . '
+         GROUP BY r.source_tag
+         ORDER BY total DESC, r.source_tag ASC',
+        array_merge([$periodType, $platform], $dateFilter['params'])
+    );
+}
+
+function available_ranking_tags_by_range(string $periodType, string $platform, array $dateRange): array
+{
+    $dateFilter = report_date_range_filter_sql($dateRange);
     return db_all(
         'SELECT r.source_tag, COUNT(*) AS total
          FROM project_reports r
@@ -146,6 +246,21 @@ function reports_by_date(string $periodType, string $date, int $limit = 30, stri
     );
 }
 
+function reports_by_range(string $periodType, array $dateRange, int $limit = 30, string $platform = '', string $tag = ''): array
+{
+    $filters = report_source_filter($platform, $tag);
+    $dateFilter = report_date_range_filter_sql($dateRange);
+    return db_all(
+        'SELECT r.*, p.name, p.full_name, p.html_url, p.description, p.stars, p.forks, p.language, p.topics, p.pushed_at
+         FROM project_reports r
+         INNER JOIN projects p ON p.id = r.project_id
+         WHERE r.period_type = ? AND p.is_hidden = 0' . analyzed_report_sql() . $dateFilter['sql'] . $filters['sql'] . '
+         ORDER BY r.report_date DESC, r.useful_score DESC, r.maturity_score DESC, r.play_score DESC, p.stars DESC
+         LIMIT ' . (int) $limit,
+        array_merge([$periodType], $dateFilter['params'], $filters['params'])
+    );
+}
+
 function github_rank_reports_by_date(string $periodType, string $date, int $limit = 30, string $platform = '', string $tag = ''): array
 {
     $filters = report_source_filter($platform, $tag);
@@ -157,6 +272,21 @@ function github_rank_reports_by_date(string $periodType, string $date, int $limi
          ORDER BY r.source_rank ASC, r.source_score DESC, p.stars DESC, p.forks DESC
          LIMIT ' . (int) $limit,
         array_merge([$periodType, $date], $filters['params'])
+    );
+}
+
+function github_rank_reports_by_range(string $periodType, array $dateRange, int $limit = 30, string $platform = '', string $tag = ''): array
+{
+    $filters = report_source_filter($platform, $tag);
+    $dateFilter = report_date_range_filter_sql($dateRange);
+    return db_all(
+        'SELECT r.*, p.name, p.full_name, p.html_url, p.description, p.stars, p.forks, p.language, p.topics, p.pushed_at
+         FROM project_reports r
+         INNER JOIN projects p ON p.id = r.project_id
+         WHERE r.period_type = ? AND p.is_hidden = 0' . raw_rank_report_sql() . $dateFilter['sql'] . $filters['sql'] . '
+         ORDER BY r.report_date DESC, r.source_rank ASC, r.source_score DESC, p.stars DESC, p.forks DESC
+         LIMIT ' . (int) $limit,
+        array_merge([$periodType], $dateFilter['params'], $filters['params'])
     );
 }
 

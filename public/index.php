@@ -2,9 +2,12 @@
 require_once (is_file(__DIR__ . '/../lib/bootstrap.php') ? __DIR__ . '/../lib/bootstrap.php' : __DIR__ . '/lib/bootstrap.php');
 require_once (is_file(__DIR__ . '/_layout.php') ? __DIR__ . '/_layout.php' : __DIR__ . '/public/_layout.php');
 
-$date = isset($_GET['date']) ? preg_replace('/[^0-9\-]/', '', (string) $_GET['date']) : '';
+$range = isset($_GET['range']) ? (string) $_GET['range'] : 'today';
+$startDate = isset($_GET['start_date']) ? (string) $_GET['start_date'] : '';
+$endDate = isset($_GET['end_date']) ? (string) $_GET['end_date'] : '';
+$dateRange = report_date_range($range, $startDate, $endDate);
 $view = isset($_GET['view']) && $_GET['view'] === 'deepseek' ? 'deepseek' : 'github';
-$platforms = available_ranking_platforms('daily', $date);
+$platforms = available_ranking_platforms_by_range('daily', $dateRange);
 $platform = isset($_GET['platform']) ? preg_replace('/[^a-z0-9_\-]/i', '', (string) $_GET['platform']) : '';
 if ($platform === '' && $platforms) {
     $platform = (string) $platforms[0]['source_platform'];
@@ -13,11 +16,10 @@ if ($platform === '') {
     $platform = 'github';
 }
 $tag = isset($_GET['tag']) ? truncate_text((string) $_GET['tag'], 64) : '';
-$tags = available_ranking_tags('daily', $platform, $date);
-$dates = recent_report_dates('daily', 14);
-$reports = $date
-    ? ($view === 'github' ? github_rank_reports_by_date('daily', $date, 30, $platform, $tag) : reports_by_date('daily', $date, 30, $platform, $tag))
-    : ($view === 'github' ? github_rank_reports('daily', 30, $platform, $tag) : latest_reports('daily', 30, $platform, $tag));
+$tags = available_ranking_tags_by_range('daily', $platform, $dateRange);
+$reports = $view === 'github'
+    ? github_rank_reports_by_range('daily', $dateRange, 30, $platform, $tag)
+    : reports_by_range('daily', $dateRange, 30, $platform, $tag);
 $pageTitle = app_setting('daily_title', '今日 GitHub 灵感榜');
 
 render_header($pageTitle);
@@ -29,17 +31,10 @@ render_header($pageTitle);
     </div>
 </div>
 
-<?php render_platform_tabs('/index.php', $platforms, $platform, $view, $date, $tag); ?>
-<?php render_tag_tabs('/index.php', $tags, $tag, $platform, $view, $date); ?>
-<?php render_rank_tabs('/index.php', $view, $date, $platform, $tag); ?>
-
-<?php if ($dates): ?>
-<div class="dates">
-    <?php foreach ($dates as $item): ?>
-        <a href="/index.php?platform=<?= h($platform) ?>&tag=<?= h($tag) ?>&view=<?= h($view) ?>&date=<?= h($item['report_date']) ?>"><?= h($item['report_date']) ?> · <?= (int) $item['total'] ?></a>
-    <?php endforeach; ?>
-</div>
-<?php endif; ?>
+<?php render_platform_tabs('/index.php', $platforms, $platform, $view, $dateRange, $tag); ?>
+<?php render_tag_tabs('/index.php', $tags, $tag, $platform, $view, $dateRange); ?>
+<?php render_rank_tabs('/index.php', $view, $dateRange, $platform, $tag); ?>
+<?php render_date_range_filter('/index.php', $platform, $tag, $view, $dateRange); ?>
 
 <?php if (!$reports): ?>
     <div class="empty"><?= h(app_setting('daily_empty_text', '还没有日报数据。完成 GitHub Actions 推送后，这里会显示灵感项目。')) ?></div>

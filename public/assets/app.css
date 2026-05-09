@@ -479,6 +479,49 @@ h2 {
   margin-bottom: 10px;
 }
 
+.date-filter {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 24px;
+}
+
+.date-custom-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 253, 248, .72);
+  padding: 12px;
+  box-shadow: var(--shadow-sm);
+}
+
+.date-custom-form label {
+  display: grid;
+  gap: 5px;
+}
+
+.date-custom-form label span,
+.date-separator {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+input[type="date"] {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fffefb;
+  color: var(--ink);
+  font: inherit;
+  padding: 8px 10px;
+}
+
+input[type="date"]:focus {
+  outline: 3px solid rgba(15, 118, 110, .16);
+  border-color: rgba(15, 118, 110, .55);
+}
+
 table {
   width: 100%;
   border: 1px solid var(--line);
