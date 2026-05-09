@@ -31,6 +31,7 @@ render_header($pageTitle);
     </div>
 </div>
 
+<?php render_deepseek_progress_panel(); ?>
 <?php render_platform_tabs('/index.php', $platforms, $platform, $view, $dateRange, $tag); ?>
 <?php render_tag_tabs('/index.php', $tags, $tag, $platform, $view, $dateRange); ?>
 <?php render_rank_tabs('/index.php', $view, $dateRange, $platform, $tag); ?>

@@ -414,6 +414,81 @@ function admin_stats(): array
     ];
 }
 
+function public_progress_summary(): array
+{
+    $latestDateRow = db_one("SELECT MAX(report_date) AS report_date FROM project_reports WHERE period_type = 'daily'");
+    $reportDate = (string) ($latestDateRow['report_date'] ?? '');
+    $platforms = [];
+    $focus = [
+        'source_platform' => '',
+        'label' => '等待采集',
+        'total' => 0,
+        'analyzed' => 0,
+        'raw_rank' => 0,
+        'percent' => 0,
+        'latest_at' => '',
+    ];
+
+    if ($reportDate !== '') {
+        $rows = db_all(
+            'SELECT source_platform,
+                    COUNT(*) AS total,
+                    SUM(CASE WHEN raw_rank_only = 0 AND one_sentence <> "" THEN 1 ELSE 0 END) AS analyzed,
+                    SUM(CASE WHEN raw_rank_only = 1 THEN 1 ELSE 0 END) AS raw_rank,
+                    MAX(created_at) AS latest_at
+             FROM project_reports
+             WHERE period_type = ? AND report_date = ?
+             GROUP BY source_platform
+             ORDER BY latest_at DESC, total DESC, source_platform ASC
+             LIMIT 8',
+            ['daily', $reportDate]
+        );
+
+        foreach ($rows as $row) {
+            $rawRank = (int) ($row['raw_rank'] ?? 0);
+            $analyzed = (int) ($row['analyzed'] ?? 0);
+            $percent = $rawRank > 0 ? (int) floor(min(100, ($analyzed / $rawRank) * 100)) : ($analyzed > 0 ? 100 : 0);
+            $platform = (string) ($row['source_platform'] ?? '');
+            $platforms[] = [
+                'source_platform' => $platform,
+                'label' => ranking_platform_label($platform),
+                'total' => (int) ($row['total'] ?? 0),
+                'analyzed' => $analyzed,
+                'raw_rank' => $rawRank,
+                'percent' => $percent,
+                'latest_at' => (string) ($row['latest_at'] ?? ''),
+            ];
+        }
+
+        if ($platforms) {
+            $focus = $platforms[0];
+        }
+    }
+
+    $latestRunRow = db_one('SELECT * FROM runs ORDER BY started_at DESC, id DESC LIMIT 1');
+    $latestAt = (string) ($focus['latest_at'] ?? '');
+    $recentSeconds = $latestAt !== '' ? time() - (int) strtotime($latestAt) : 999999;
+    $active = ($latestRunRow && (string) ($latestRunRow['status'] ?? '') === 'started') || ($latestAt !== '' && $recentSeconds >= 0 && $recentSeconds <= 20 * 60);
+    $latestRun = $latestRunRow ? [
+        'status' => (string) ($latestRunRow['status'] ?? ''),
+        'run_type' => (string) ($latestRunRow['run_type'] ?? ''),
+        'started_at' => (string) ($latestRunRow['started_at'] ?? ''),
+        'finished_at' => (string) ($latestRunRow['finished_at'] ?? ''),
+        'total_found' => (int) ($latestRunRow['total_found'] ?? 0),
+        'total_analyzed' => (int) ($latestRunRow['total_analyzed'] ?? 0),
+        'source' => (string) ($latestRunRow['source'] ?? ''),
+    ] : null;
+
+    return [
+        'generated_at' => date('Y-m-d H:i:s'),
+        'report_date' => $reportDate,
+        'active' => $active,
+        'focus' => $focus,
+        'platforms' => $platforms,
+        'latest_run' => $latestRun,
+    ];
+}
+
 function admin_project_statuses(): array
 {
     return [

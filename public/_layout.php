@@ -203,3 +203,108 @@ function render_date_range_filter(string $basePath, string $activePlatform, stri
 </div>
 <?php
 }
+
+function render_deepseek_progress_panel(): void
+{
+    $progress = public_progress_summary();
+    $focus = $progress['focus'];
+    $percent = (int) ($focus['percent'] ?? 0);
+    $active = !empty($progress['active']);
+    $platforms = $progress['platforms'];
+    ?>
+<section class="progress-panel" data-progress-panel>
+    <div class="progress-panel-top">
+        <div>
+            <div class="progress-kicker">DeepSeek 解读进度</div>
+            <h2 data-progress-title><?= h($focus['label']) ?> · <?= $percent ?>%</h2>
+        </div>
+        <span class="progress-status <?= $active ? 'is-active' : 'is-idle' ?>" data-progress-status><?= $active ? '正在更新' : '最近更新' ?></span>
+    </div>
+    <div class="progress-meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= $percent ?>">
+        <span data-progress-bar style="width: <?= $percent ?>%"></span>
+    </div>
+    <div class="progress-meta">
+        <span><strong data-progress-percent><?= $percent ?>%</strong> 完成</span>
+        <span>已解读 <strong data-progress-analyzed><?= (int) ($focus['analyzed'] ?? 0) ?></strong></span>
+        <span>原始候选 <strong data-progress-raw><?= (int) ($focus['raw_rank'] ?? 0) ?></strong></span>
+        <span data-progress-date><?= h((string) ($progress['report_date'] ?: '-')) ?></span>
+    </div>
+    <div class="progress-platforms" data-progress-platforms>
+        <?php foreach ($platforms as $platform): ?>
+            <span><?= h($platform['label']) ?> <?= (int) $platform['analyzed'] ?>/<?= (int) $platform['raw_rank'] ?></span>
+        <?php endforeach; ?>
+    </div>
+</section>
+<script>
+(function () {
+  var panel = document.querySelector('[data-progress-panel]');
+  if (!panel || panel.getAttribute('data-bound') === '1') {
+    return;
+  }
+  panel.setAttribute('data-bound', '1');
+
+  function formatNumber(value) {
+    return Number(value || 0).toLocaleString('zh-CN');
+  }
+
+  function escapeHtml(value) {
+    return String(value || '').replace(/[&<>"']/g, function (char) {
+      return {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+      }[char];
+    });
+  }
+
+  function renderPlatforms(platforms) {
+    var target = panel.querySelector('[data-progress-platforms]');
+    if (!target) {
+      return;
+    }
+    target.innerHTML = (platforms || []).map(function (item) {
+      return '<span>' + escapeHtml(item.label) + ' ' + formatNumber(item.analyzed) + '/' + formatNumber(item.raw_rank) + '</span>';
+    }).join('');
+  }
+
+  function renderProgress(payload) {
+    if (!payload || !payload.ok || !payload.focus) {
+      return;
+    }
+    var focus = payload.focus;
+    var percent = Math.max(0, Math.min(100, Number(focus.percent || 0)));
+    var status = panel.querySelector('[data-progress-status]');
+    var meter = panel.querySelector('[role="progressbar"]');
+
+    panel.querySelector('[data-progress-title]').textContent = (focus.label || '等待采集') + ' · ' + percent + '%';
+    panel.querySelector('[data-progress-bar]').style.width = percent + '%';
+    panel.querySelector('[data-progress-percent]').textContent = percent + '%';
+    panel.querySelector('[data-progress-analyzed]').textContent = formatNumber(focus.analyzed);
+    panel.querySelector('[data-progress-raw]').textContent = formatNumber(focus.raw_rank);
+    panel.querySelector('[data-progress-date]').textContent = payload.report_date || '-';
+
+    if (meter) {
+      meter.setAttribute('aria-valuenow', String(percent));
+    }
+    if (status) {
+      status.textContent = payload.active ? '正在更新' : '最近更新';
+      status.className = 'progress-status ' + (payload.active ? 'is-active' : 'is-idle');
+    }
+    renderPlatforms(payload.platforms);
+  }
+
+  function loadProgress() {
+    fetch('/api/progress.php', { cache: 'no-store' })
+      .then(function (response) { return response.json(); })
+      .then(renderProgress)
+      .catch(function () {});
+  }
+
+  window.setTimeout(loadProgress, 1200);
+  window.setInterval(loadProgress, 15000);
+})();
+</script>
+<?php
+}
