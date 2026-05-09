@@ -11,6 +11,7 @@ function ranking_platform_labels(): array
         'trendshift' => 'Trendshift 趋势',
         'reporank' => 'RepoRank 排行',
         'gitrepotrend' => 'GitRepoTrend 热度',
+        'backfill' => '全量重解读',
     ];
 }
 
@@ -46,6 +47,7 @@ function ranking_tag_labels(): array
         'agent' => 'Agent',
         'php' => 'PHP',
         '额外搜索语句' => '额外搜索',
+        'all_projects' => '全部项目',
     ];
 }
 
@@ -590,6 +592,61 @@ function update_project_admin(int $projectId, string $status, bool $hidden, stri
         'UPDATE projects SET admin_status = ?, is_hidden = ?, admin_note = ?, updated_at = ? WHERE id = ?',
         [normalize_admin_status($status), $hidden ? 1 : 0, truncate_text($note, 5000), date('Y-m-d H:i:s'), $projectId]
     );
+}
+
+function backfill_project_count(): int
+{
+    $row = db_one('SELECT COUNT(*) AS total FROM projects WHERE is_hidden = 0');
+    return (int) ($row['total'] ?? 0);
+}
+
+function backfill_projects(int $offset, int $limit): array
+{
+    $offset = max(0, $offset);
+    $limit = max(1, min(200, $limit));
+    $rows = db_all(
+        'SELECT * FROM projects
+         WHERE is_hidden = 0
+         ORDER BY stars DESC, forks DESC, id ASC
+         LIMIT ' . $offset . ', ' . $limit
+    );
+
+    $projects = [];
+    foreach ($rows as $index => $row) {
+        $topics = array_values(array_filter(array_map('trim', explode(',', (string) ($row['topics'] ?? '')))));
+        $projects[] = [
+            'id' => (int) ($row['github_id'] ?? 0),
+            'github_id' => (int) ($row['github_id'] ?? 0),
+            'name' => (string) ($row['name'] ?? ''),
+            'full_name' => (string) ($row['full_name'] ?? ''),
+            'html_url' => (string) ($row['html_url'] ?? ''),
+            'description' => (string) ($row['description'] ?? ''),
+            'stargazers_count' => (int) ($row['stars'] ?? 0),
+            'forks_count' => (int) ($row['forks'] ?? 0),
+            'language' => (string) ($row['language'] ?? ''),
+            'topics' => $topics,
+            'pushed_at' => (string) ($row['pushed_at'] ?? ''),
+            'source_platform' => 'backfill',
+            'source_tag' => 'all_projects',
+            'source_rank' => $offset + $index + 1,
+            'source_score' => (int) ($row['stars'] ?? 0) + (int) ($row['forks'] ?? 0) * 2,
+        ];
+    }
+
+    return $projects;
+}
+
+function reset_project_analyses(): array
+{
+    db_exec('DELETE FROM project_reports WHERE raw_rank_only = 0');
+    $deletedAnalyses = db()->affected_rows;
+    db_exec("DELETE FROM project_reports WHERE raw_rank_only = 1 AND source_platform = 'backfill'");
+    $deletedBackfillRaw = db()->affected_rows;
+
+    return [
+        'deleted_analyses' => max(0, (int) $deletedAnalyses),
+        'deleted_backfill_raw' => max(0, (int) $deletedBackfillRaw),
+    ];
 }
 
 function all_app_settings(): array

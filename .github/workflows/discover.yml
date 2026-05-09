@@ -26,6 +26,22 @@ on:
         description: "GitHub Search 本次最多跑多少条搜索规则，留空为全部"
         required: false
         default: ""
+      backfill_existing:
+        description: "true 时不抓新榜单，改为重解读数据库里已有全部项目"
+        required: false
+        default: "false"
+      reset_analyses:
+        description: "true 时先清空旧 DeepSeek 解读和旧全量重解读进度"
+        required: false
+        default: "false"
+      backfill_offset:
+        description: "全量重解读起始项目偏移"
+        required: false
+        default: "0"
+      backfill_limit:
+        description: "全量重解读最多处理多少项目，留空为全部"
+        required: false
+        default: ""
 
 jobs:
   discover:
@@ -49,9 +65,14 @@ jobs:
           APP_INGEST_TOKEN: ${{ secrets.APP_INGEST_TOKEN }}
           RUN_TYPE: ${{ github.event.inputs.run_type || (github.event.schedule == '30 1 * * 1' && 'weekly') || 'daily' }}
           SEED_MODE: ${{ github.event.inputs.seed_mode || 'false' }}
+          BACKFILL_EXISTING: ${{ github.event.inputs.backfill_existing || 'false' }}
+          RESET_ANALYSES: ${{ github.event.inputs.reset_analyses || 'false' }}
+          BACKFILL_OFFSET: ${{ github.event.inputs.backfill_offset || '0' }}
+          BACKFILL_LIMIT: ${{ github.event.inputs.backfill_limit || '' }}
           DISCOVER_PLATFORMS: ${{ github.event.inputs.platforms || '' }}
           GITHUB_SEARCH_SPEC_OFFSET: ${{ github.event.inputs.search_offset || '0' }}
           GITHUB_SEARCH_SPEC_LIMIT: ${{ github.event.inputs.search_limit || '' }}
+          REPORT_TIMEZONE: "Asia/Shanghai"
           MAX_PROJECTS: "3"
           INGEST_BATCH_SIZE: "1"
           RAW_INGEST_BATCH_SIZE: "25"

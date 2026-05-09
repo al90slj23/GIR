@@ -1,8 +1,13 @@
+const backfillMode = ["1", "true", "yes", "on"].includes(String(process.env.BACKFILL_EXISTING || "").toLowerCase());
+const resetAnalyses = ["1", "true", "yes", "on"].includes(String(process.env.RESET_ANALYSES || "").toLowerCase());
 const runType = process.env.RUN_TYPE || process.argv[2] || "daily";
-const periodType = runType === "weekly" ? "weekly" : runType === "manual" ? "manual" : "daily";
+const periodType = backfillMode ? "daily" : (runType === "weekly" ? "weekly" : runType === "manual" ? "manual" : "daily");
 const ingestBatchSize = Math.max(1, Number(process.env.INGEST_BATCH_SIZE || "1"));
 const rawIngestBatchSize = Math.max(1, Number(process.env.RAW_INGEST_BATCH_SIZE || "50"));
 const analysisIngestBatchSize = Math.max(1, Number(process.env.ANALYSIS_INGEST_BATCH_SIZE || "20"));
+const backfillFetchBatchSize = Math.max(1, Math.min(200, Number(process.env.BACKFILL_FETCH_BATCH_SIZE || "100")));
+const backfillOffset = Math.max(0, Number(process.env.BACKFILL_OFFSET || "0"));
+const backfillLimit = Math.max(0, Number(process.env.BACKFILL_LIMIT || "0"));
 const requestDelayMs = Math.max(0, Number(process.env.REQUEST_DELAY_MS || "0"));
 const ingestDelayMs = Math.max(0, Number(process.env.INGEST_DELAY_MS || "0"));
 const githubSearchDelayMs = Math.max(0, Number(process.env.GITHUB_SEARCH_DELAY_MS || "3500"));
@@ -11,6 +16,7 @@ const githubMaxRateLimitWaitMs = Math.max(0, Number(process.env.GITHUB_MAX_RATE_
 const githubSearchSpecOffset = Math.max(0, Number(process.env.GITHUB_SEARCH_SPEC_OFFSET || "0"));
 const githubSearchSpecLimit = Math.max(0, Number(process.env.GITHUB_SEARCH_SPEC_LIMIT || "0"));
 const seedMode = ["1", "true", "yes", "on"].includes(String(process.env.SEED_MODE || "").toLowerCase());
+const reportTimezone = process.env.REPORT_TIMEZONE || "Asia/Shanghai";
 
 const env = {
   githubToken: process.env.GIR_GITHUB_SEARCH_TOKEN || process.env.GH_PAT || process.env.GITHUB_TOKEN || "",
@@ -112,7 +118,18 @@ const seedExtraQueries = [
   "topic:llm stars:>0 created:>{since}",
 ];
 
-const today = new Date().toISOString().slice(0, 10);
+const today = process.env.REPORT_DATE || dateInTimeZone(new Date(), reportTimezone);
+
+function dateInTimeZone(date, timeZone) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
 
 function githubHeaders(token = env.githubToken) {
   return {
@@ -152,6 +169,20 @@ function deriveConfigUrl() {
 function deriveHistoryUrl() {
   if (/\/api\/receive_projects\.php($|\?)/.test(env.ingestUrl)) {
     return env.ingestUrl.replace(/\/api\/receive_projects\.php($|\?.*)/, "/api/project_history.php");
+  }
+  return "";
+}
+
+function deriveBackfillProjectsUrl() {
+  if (/\/api\/receive_projects\.php($|\?)/.test(env.ingestUrl)) {
+    return env.ingestUrl.replace(/\/api\/receive_projects\.php($|\?.*)/, "/api/backfill_projects.php");
+  }
+  return "";
+}
+
+function deriveResetAnalysesUrl() {
+  if (/\/api\/receive_projects\.php($|\?)/.test(env.ingestUrl)) {
+    return env.ingestUrl.replace(/\/api\/receive_projects\.php($|\?.*)/, "/api/reset_analyses.php");
   }
   return "";
 }
@@ -770,6 +801,118 @@ async function fetchProjectHistory(fullName) {
   }
 }
 
+async function resetAnalysesOnHost() {
+  const url = deriveResetAnalysesUrl();
+  if (!url) {
+    throw new Error("Cannot derive reset_analyses API URL from APP_INGEST_URL");
+  }
+  const form = new URLSearchParams();
+  form.set("confirm", "clear_analyses");
+  const res = await fetchWithTimeout(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Authorization": `Bearer ${env.ingestToken}`,
+      "User-Agent": "GIR-Discover",
+    },
+    body: form.toString(),
+  }, 60000);
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`Reset analyses ${res.status}: ${text}`);
+  }
+  console.log(`Reset analyses: ${text}`);
+}
+
+async function fetchBackfillProjectsPage(offset, limit) {
+  const baseUrl = deriveBackfillProjectsUrl();
+  if (!baseUrl) {
+    throw new Error("Cannot derive backfill_projects API URL from APP_INGEST_URL");
+  }
+  const url = new URL(baseUrl);
+  url.searchParams.set("offset", String(offset));
+  url.searchParams.set("limit", String(limit));
+  const res = await fetchWithTimeout(url.toString(), {
+    headers: {
+      "Accept": "application/json",
+      "Authorization": `Bearer ${env.ingestToken}`,
+      "User-Agent": "GIR-Discover",
+    },
+  }, 60000);
+  if (!res.ok) {
+    throw new Error(`Backfill projects ${res.status}: ${await res.text()}`);
+  }
+  return res.json();
+}
+
+async function loadBackfillProjects() {
+  const projects = [];
+  let offset = backfillOffset;
+  let total = null;
+  while (true) {
+    if (backfillLimit > 0 && projects.length >= backfillLimit) break;
+    const pageLimit = backfillLimit > 0
+      ? Math.min(backfillFetchBatchSize, backfillLimit - projects.length)
+      : backfillFetchBatchSize;
+    const data = await fetchBackfillProjectsPage(offset, pageLimit);
+    const pageProjects = Array.isArray(data.projects) ? data.projects : [];
+    total = Number(data.total || total || 0);
+    projects.push(...pageProjects);
+    console.log(`Loaded backfill projects: offset=${offset}, count=${pageProjects.length}, total_loaded=${projects.length}, total=${total}`);
+    if (pageProjects.length < pageLimit) break;
+    offset += pageProjects.length;
+  }
+  return projects;
+}
+
+async function runBackfill(config) {
+  console.log(`Backfill config: reset=${resetAnalyses}, offset=${backfillOffset}, limit=${backfillLimit || "all"}, report_date=${today}`);
+  if (resetAnalyses) {
+    await resetAnalysesOnHost();
+  }
+
+  const repos = await loadBackfillProjects();
+  if (!repos.length) {
+    throw new Error("No projects loaded for backfill");
+  }
+
+  console.log(`Ingesting backfill raw candidates: ${repos.length}`);
+  await ingest(repos.map((repo) => projectPayload(repo, { raw_rank_only: true })), rawIngestBatchSize);
+
+  let analyzedCount = 0;
+  let analyzedBatch = [];
+  for (const repo of repos) {
+    console.log(`Backfill analyzing ${repo.full_name}`);
+    try {
+      const history = await fetchProjectHistory(repo.full_name);
+      const readme = await getReadme(repo);
+      const analysis = await analyze(repo, readme, history, config);
+      analyzedBatch.push(projectPayload(repo, analysis));
+      analyzedCount++;
+      if (analyzedBatch.length >= analysisIngestBatchSize) {
+        await ingest(analyzedBatch, analysisIngestBatchSize);
+        analyzedBatch = [];
+      }
+      if (requestDelayMs > 0) {
+        await sleep(requestDelayMs);
+      }
+    } catch (error) {
+      console.error(`Backfill failed ${repo.full_name}: ${error.message}`);
+      if (requestDelayMs > 0) {
+        await sleep(requestDelayMs);
+      }
+    }
+  }
+
+  if (analyzedBatch.length) {
+    await ingest(analyzedBatch, analysisIngestBatchSize);
+  }
+  if (!analyzedCount) {
+    throw new Error("No projects analyzed in backfill");
+  }
+  console.log(`Backfill complete: total_loaded=${repos.length}, total_analyzed=${analyzedCount}`);
+}
+
 async function analyze(repo, readme, history = [], config = defaultConfig) {
   const res = await fetchWithTimeout(`${env.deepseekBaseUrl.replace(/\/$/, "")}/v1/chat/completions`, {
     method: "POST",
@@ -851,7 +994,11 @@ function projectPayload(repo, analysis) {
 
 async function main() {
   const config = applySeedConfig(applyRuntimeOverrides(await loadDiscoverConfig()));
-  console.log(`Discover config: mode=${seedMode ? "seed" : "normal"}, max=${config.max_projects}, per_page=${config.per_page}, platforms=${config.platforms.join(",")}, topics=${config.topics.join(",")}, extra_queries=${config.extra_queries.length}`);
+  console.log(`Discover config: mode=${backfillMode ? "backfill" : (seedMode ? "seed" : "normal")}, max=${config.max_projects}, per_page=${config.per_page}, platforms=${config.platforms.join(",")}, topics=${config.topics.join(",")}, extra_queries=${config.extra_queries.length}, report_date=${today}`);
+  if (backfillMode) {
+    await runBackfill(config);
+    return;
+  }
   if (periodType === "daily" && config.daily_enabled === false) {
     console.log("Daily discover disabled by config; skipping");
     return;
