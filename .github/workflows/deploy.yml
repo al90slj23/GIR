@@ -58,6 +58,7 @@ jobs:
           upload api/install_schema.php api/install_schema.php
           upload api/project_history.php api/project_history.php
           upload api/receive_projects.php api/receive_projects.php
+          upload api/stats.php api/stats.php
           upload api/trigger_run.php api/trigger_run.php
 
           upload config/config.php config/config.php
