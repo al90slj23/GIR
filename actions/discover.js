@@ -676,7 +676,8 @@ async function getReadme(repo) {
 function defaultSystemPrompt() {
   return [
     "你是一个帮助站长发现 GitHub 新项目的技术分析员。",
-    "站长的部署环境是传统 PHP 7.2 + MySQL 5.1 虚拟主机，不能运行 Docker、Node/Python 常驻服务、本地模型或 WebSocket。",
+    "你的目标是把项目讲成人能快速理解的中文：它做什么、为什么值得关注、适合谁、怎么用、有什么可借鉴点。",
+    "不要把本站部署环境当作通用评价标准；除非项目本身就是 PHP、建站、部署、虚拟主机或运维工具，否则不要讨论“是否适合传统 PHP 虚拟主机”。",
     "你必须用中文输出严格 JSON，不要 Markdown，不要解释。",
     "评分为 1 到 10 的整数。",
     "play_score 衡量项目是否有趣、是否值得点开体验、是否能带来灵感。",
@@ -687,7 +688,7 @@ function defaultSystemPrompt() {
 }
 
 function defaultTaskPrompt() {
-  return "为这次榜单命中生成一条新的中文解说。即使历史里已经分析过同一个项目，也不要复用旧文案；请结合最近几次解说，判断这次是否有新功能、热度变化、定位变化或值得重新关注的原因。表达要说人话，避免空泛夸奖，重点说明这个项目解决什么问题、适合谁、是否值得收藏或研究。";
+  return "为这次榜单命中生成一条新的中文解说。即使历史里已经分析过同一个项目，也不要复用旧文案；请结合最近几次解说，判断这次是否有新功能、热度变化、定位变化或值得重新关注的原因。表达要说人话，避免空泛夸奖，重点说明：项目一句话用途、解决的真实问题、为什么上榜或变热、适合谁用、上手方式或可借鉴点、主要风险。不要默认讨论是否适合传统 PHP 虚拟主机，也不要因为项目需要 Docker、Python、Node 或 GPU 就直接给出“暂不关注”；只有当项目主题与建站/部署环境直接相关时，才在风险里简短提一句环境要求。";
 }
 
 function systemPrompt(config) {
@@ -724,7 +725,6 @@ function userPrompt(repo, readme, history = [], config = defaultConfig) {
       useful_score: "1-10",
       maturity_score: "1-10，综合 Stars、Forks、最近更新、文档完整度、社区活跃度判断成熟度",
       difficulty: "低/中/高",
-      is_suitable_for_this_host: true,
       ideas_to_reuse: ["可借鉴点"],
       risks: ["风险点"],
       change_note: "结合 previous_analyses 写出本次相对最近几次解说的变化观察；如果没有明显变化，也要说明没有明显变化以及本次仍值得或不值得关注的原因",
