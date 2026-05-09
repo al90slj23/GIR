@@ -77,6 +77,26 @@ function render_github_project_card(array $row, int $rank): void
 {
     $platform = ranking_platform_label((string) ($row['source_platform'] ?? 'github'));
     $tag = ranking_tag_label((string) ($row['source_tag'] ?? '综合'));
+    $summary = trim((string) ($row['analysis_summary_zh'] ?? ''));
+    if ($summary === '') {
+        $summary = trim((string) ($row['analysis_one_sentence'] ?? ''));
+    }
+    if ($summary === '') {
+        $summary = trim((string) ($row['analysis_change_note'] ?? ''));
+    }
+    if ($summary === '') {
+        $summary = trim((string) ($row['one_sentence'] ?? ''));
+    }
+    if ($summary === '') {
+        $summary = trim((string) ($row['description'] ?? ''));
+    }
+    if ($summary === '') {
+        $summary = '等待 DeepSeek 生成中文解读。';
+    }
+    $projectType = trim((string) ($row['analysis_project_type'] ?? ''));
+    if ($projectType === '') {
+        $projectType = trim((string) ($row['project_type'] ?? ''));
+    }
     ?>
 <article class="project-card">
     <div class="project-top">
@@ -91,9 +111,9 @@ function render_github_project_card(array $row, int $rank): void
         <span class="metric">Stars <?= (int) $row['stars'] ?></span>
         <span class="metric">Forks <?= (int) $row['forks'] ?></span>
         <span class="metric">最近推送 <?= h($row['pushed_at'] ?: '-') ?></span>
-        <span class="metric"><?= h($row['project_type'] ?: '未分类') ?></span>
+        <span class="metric"><?= h($projectType ?: '未分类') ?></span>
     </div>
-    <p class="desc"><?= h($row['one_sentence'] ?: '已完成 DeepSeek 中文解读，点进项目查看。') ?></p>
+    <p class="desc"><?= h($summary) ?></p>
     <div class="muted">
         <a href="/project.php?id=<?= (int) $row['project_id'] ?>">查看中文解读</a>
         · <a href="<?= h($row['html_url']) ?>" target="_blank" rel="noreferrer">GitHub</a>

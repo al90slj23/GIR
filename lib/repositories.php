@@ -235,6 +235,31 @@ function raw_rank_report_sql(): string
     return " AND r.raw_rank_only = 1";
 }
 
+function raw_rank_analysis_select_sql(): string
+{
+    return ', ar.one_sentence AS analysis_one_sentence,
+              ar.summary_zh AS analysis_summary_zh,
+              ar.change_note AS analysis_change_note,
+              ar.project_type AS analysis_project_type';
+}
+
+function raw_rank_analysis_join_sql(): string
+{
+    return ' LEFT JOIN project_reports ar ON ar.id = (
+                 SELECT rr.id
+                 FROM project_reports rr
+                 WHERE rr.project_id = r.project_id
+                   AND rr.period_type = r.period_type
+                   AND rr.report_date = r.report_date
+                   AND rr.source_platform = r.source_platform
+                   AND rr.source_tag = r.source_tag
+                   AND rr.raw_rank_only = 0
+                   AND rr.one_sentence <> ""
+                 ORDER BY rr.id DESC
+                 LIMIT 1
+             )';
+}
+
 function available_ranking_platforms(string $periodType, string $date = ''): array
 {
     $dateFilter = report_date_filter_sql($periodType, $date);
@@ -309,9 +334,10 @@ function github_rank_reports(string $periodType, int $limit = 20, string $platfo
 {
     $filters = report_source_filter($platform, $tag);
     return db_all(
-        'SELECT r.*, p.name, p.full_name, p.html_url, p.description, p.stars, p.forks, p.language, p.topics, p.pushed_at
+        'SELECT r.*, p.name, p.full_name, p.html_url, p.description, p.stars, p.forks, p.language, p.topics, p.pushed_at' . raw_rank_analysis_select_sql() . '
          FROM project_reports r
          INNER JOIN projects p ON p.id = r.project_id
+         ' . raw_rank_analysis_join_sql() . '
          WHERE r.period_type = ? AND p.is_hidden = 0' . raw_rank_report_sql() . $filters['sql'] . '
          ORDER BY r.report_date DESC, r.source_rank ASC, r.source_score DESC, p.stars DESC, p.forks DESC
          LIMIT ' . (int) $limit,
@@ -352,9 +378,10 @@ function github_rank_reports_by_date(string $periodType, string $date, int $limi
 {
     $filters = report_source_filter($platform, $tag);
     return db_all(
-        'SELECT r.*, p.name, p.full_name, p.html_url, p.description, p.stars, p.forks, p.language, p.topics, p.pushed_at
+        'SELECT r.*, p.name, p.full_name, p.html_url, p.description, p.stars, p.forks, p.language, p.topics, p.pushed_at' . raw_rank_analysis_select_sql() . '
          FROM project_reports r
          INNER JOIN projects p ON p.id = r.project_id
+         ' . raw_rank_analysis_join_sql() . '
          WHERE r.period_type = ? AND r.report_date = ? AND p.is_hidden = 0' . raw_rank_report_sql() . $filters['sql'] . '
          ORDER BY r.source_rank ASC, r.source_score DESC, p.stars DESC, p.forks DESC
          LIMIT ' . (int) $limit,
@@ -367,9 +394,10 @@ function github_rank_reports_by_range(string $periodType, array $dateRange, int 
     $filters = report_source_filter($platform, $tag);
     $dateFilter = report_date_range_filter_sql($dateRange);
     return db_all(
-        'SELECT r.*, p.name, p.full_name, p.html_url, p.description, p.stars, p.forks, p.language, p.topics, p.pushed_at
+        'SELECT r.*, p.name, p.full_name, p.html_url, p.description, p.stars, p.forks, p.language, p.topics, p.pushed_at' . raw_rank_analysis_select_sql() . '
          FROM project_reports r
          INNER JOIN projects p ON p.id = r.project_id
+         ' . raw_rank_analysis_join_sql() . '
          WHERE r.period_type = ? AND p.is_hidden = 0' . raw_rank_report_sql() . $dateFilter['sql'] . $filters['sql'] . '
          ORDER BY r.report_date DESC, r.source_rank ASC, r.source_score DESC, p.stars DESC, p.forks DESC
          LIMIT ' . (int) $limit,
