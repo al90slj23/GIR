@@ -420,6 +420,44 @@ h2 {
   font-weight: 780;
 }
 
+.progress-timing {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.progress-timing span {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, .5);
+  padding: 11px 12px;
+  min-width: 0;
+}
+
+.progress-timing strong,
+.progress-timing em {
+  display: block;
+}
+
+.progress-timing strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progress-timing em {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.3;
+}
+
 .progress-platforms {
   margin-top: 12px;
 }
@@ -881,6 +919,10 @@ select {
 
   .section-head {
     flex-direction: column;
+  }
+
+  .progress-timing {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .progress-panel-top {

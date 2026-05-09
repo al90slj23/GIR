@@ -212,6 +212,7 @@ function render_deepseek_progress_panel(): void
     $percentText = rtrim(rtrim(number_format($percent, 1, '.', ''), '0'), '.');
     $active = !empty($progress['active']);
     $platforms = $progress['platforms'];
+    $timing = $focus['timing'] ?? [];
     ?>
 <section class="progress-panel" data-progress-panel>
     <div class="progress-panel-top">
@@ -230,6 +231,13 @@ function render_deepseek_progress_panel(): void
         <span>原始候选 <strong data-progress-raw><?= (int) ($focus['raw_rank'] ?? 0) ?></strong></span>
         <span data-progress-date><?= h((string) ($progress['report_date'] ?: '-')) ?></span>
     </div>
+    <div class="progress-timing">
+        <span><strong data-progress-elapsed><?= h((string) ($timing['elapsed_text'] ?? '计算中')) ?></strong><em>任务已运行</em></span>
+        <span><strong data-progress-rate><?= h((string) ($timing['rate_text'] ?? '计算中')) ?></strong><em>动态平均速度</em></span>
+        <span><strong data-progress-eta><?= h((string) ($timing['eta_text'] ?? '计算中')) ?></strong><em>预计剩余时长</em></span>
+        <span><strong data-progress-total><?= h((string) ($timing['estimated_total_text'] ?? '计算中')) ?></strong><em>预计总耗时</em></span>
+        <span><strong data-progress-finish><?= h((string) (($timing['estimated_finish_at'] ?? '') ?: '计算中')) ?></strong><em>预计完成时间</em></span>
+    </div>
     <div class="progress-platforms" data-progress-platforms>
         <?php foreach ($platforms as $platform): ?>
             <span><?= h($platform['label']) ?> <?= (int) $platform['analyzed'] ?>/<?= (int) $platform['raw_rank'] ?></span>
@@ -246,6 +254,11 @@ function render_deepseek_progress_panel(): void
 
   function formatNumber(value) {
     return Number(value || 0).toLocaleString('zh-CN');
+  }
+
+  function formatPercent(value) {
+    var percent = Math.max(0, Math.min(100, Number(value || 0)));
+    return percent.toLocaleString('zh-CN', { maximumFractionDigits: 1 });
   }
 
   function escapeHtml(value) {
@@ -270,21 +283,35 @@ function render_deepseek_progress_panel(): void
     }).join('');
   }
 
+  function setText(selector, value) {
+    var target = panel.querySelector(selector);
+    if (target) {
+      target.textContent = value || '计算中';
+    }
+  }
+
   function renderProgress(payload) {
     if (!payload || !payload.ok || !payload.focus) {
       return;
     }
     var focus = payload.focus;
     var percent = Math.max(0, Math.min(100, Number(focus.percent || 0)));
+    var percentText = formatPercent(percent);
+    var timing = focus.timing || {};
     var status = panel.querySelector('[data-progress-status]');
     var meter = panel.querySelector('[role="progressbar"]');
 
-    panel.querySelector('[data-progress-title]').textContent = (focus.label || '等待采集') + ' · ' + percent + '%';
-    panel.querySelector('[data-progress-bar]').style.width = percent + '%';
-    panel.querySelector('[data-progress-percent]').textContent = percent + '%';
+    panel.querySelector('[data-progress-title]').textContent = (focus.label || '等待采集') + ' · ' + percentText + '%';
+    panel.querySelector('[data-progress-bar]').style.width = percentText + '%';
+    panel.querySelector('[data-progress-percent]').textContent = percentText + '%';
     panel.querySelector('[data-progress-analyzed]').textContent = formatNumber(focus.analyzed);
     panel.querySelector('[data-progress-raw]').textContent = formatNumber(focus.raw_rank);
     panel.querySelector('[data-progress-date]').textContent = payload.report_date || '-';
+    setText('[data-progress-elapsed]', timing.elapsed_text);
+    setText('[data-progress-rate]', timing.rate_text);
+    setText('[data-progress-eta]', timing.eta_text);
+    setText('[data-progress-total]', timing.estimated_total_text);
+    setText('[data-progress-finish]', timing.estimated_finish_at);
 
     if (meter) {
       meter.setAttribute('aria-valuenow', String(percent));

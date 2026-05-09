@@ -57,6 +57,91 @@ function ranking_tag_label(string $tag): string
     return $labels[$tag] ?? $tag;
 }
 
+function progress_timestamp(string $value): int
+{
+    if ($value === '') {
+        return 0;
+    }
+    $timestamp = strtotime($value);
+    return $timestamp === false ? 0 : (int) $timestamp;
+}
+
+function progress_duration_text(?int $seconds): string
+{
+    if ($seconds === null || $seconds < 0) {
+        return '计算中';
+    }
+
+    if ($seconds < 60) {
+        return $seconds . ' 秒';
+    }
+
+    if ($seconds < 3600) {
+        $minutes = (int) floor($seconds / 60);
+        $remainingSeconds = $seconds % 60;
+        return $remainingSeconds > 0 ? $minutes . ' 分 ' . $remainingSeconds . ' 秒' : $minutes . ' 分';
+    }
+
+    if ($seconds < 86400) {
+        $hours = (int) floor($seconds / 3600);
+        $minutes = (int) floor(($seconds % 3600) / 60);
+        return $minutes > 0 ? $hours . ' 时 ' . $minutes . ' 分' : $hours . ' 时';
+    }
+
+    $days = (int) floor($seconds / 86400);
+    $hours = (int) floor(($seconds % 86400) / 3600);
+    return $hours > 0 ? $days . ' 天 ' . $hours . ' 时' : $days . ' 天';
+}
+
+function progress_rate_text(float $ratePerHour): string
+{
+    if ($ratePerHour <= 0) {
+        return '计算中';
+    }
+
+    if ($ratePerHour >= 10) {
+        return number_format($ratePerHour, 0) . ' 条/小时';
+    }
+
+    return number_format($ratePerHour, 1) . ' 条/小时';
+}
+
+function progress_timing(array $row, int $rawRank, int $analyzed): array
+{
+    $now = time();
+    $startedAt = (string) ($row['started_at'] ?? '');
+    $firstAnalysisAt = (string) ($row['first_analysis_at'] ?? '');
+    $latestAnalysisAt = (string) ($row['latest_analysis_at'] ?? '');
+    $startedTimestamp = progress_timestamp($startedAt);
+    $firstAnalysisTimestamp = progress_timestamp($firstAnalysisAt);
+    $elapsedSeconds = $startedTimestamp > 0 ? max(0, $now - $startedTimestamp) : null;
+    $analysisElapsedSeconds = ($firstAnalysisTimestamp > 0 && $analyzed > 0) ? max(1, $now - $firstAnalysisTimestamp) : null;
+    $ratePerSecond = ($analysisElapsedSeconds !== null && $analysisElapsedSeconds > 0) ? $analyzed / $analysisElapsedSeconds : 0.0;
+    $ratePerHour = $ratePerSecond > 0 ? $ratePerSecond * 3600 : 0.0;
+    $remaining = max(0, $rawRank - $analyzed);
+    $etaSeconds = $ratePerSecond > 0 ? (int) ceil($remaining / $ratePerSecond) : null;
+    $estimatedTotalSeconds = ($elapsedSeconds !== null && $etaSeconds !== null) ? $elapsedSeconds + $etaSeconds : null;
+    $estimatedFinishAt = $etaSeconds !== null ? date('Y-m-d H:i:s', $now + $etaSeconds) : '';
+
+    return [
+        'started_at' => $startedAt,
+        'first_analysis_at' => $firstAnalysisAt,
+        'latest_analysis_at' => $latestAnalysisAt,
+        'elapsed_seconds' => $elapsedSeconds,
+        'elapsed_text' => progress_duration_text($elapsedSeconds),
+        'analysis_elapsed_seconds' => $analysisElapsedSeconds,
+        'analysis_elapsed_text' => progress_duration_text($analysisElapsedSeconds),
+        'remaining' => $remaining,
+        'rate_per_hour' => round($ratePerHour, 1),
+        'rate_text' => progress_rate_text($ratePerHour),
+        'eta_seconds' => $etaSeconds,
+        'eta_text' => progress_duration_text($etaSeconds),
+        'estimated_total_seconds' => $estimatedTotalSeconds,
+        'estimated_total_text' => progress_duration_text($estimatedTotalSeconds),
+        'estimated_finish_at' => $estimatedFinishAt,
+    ];
+}
+
 function report_date_filter_sql(string $periodType, string $date = ''): array
 {
     if ($date !== '') {
@@ -429,6 +514,7 @@ function public_progress_summary(): array
         'raw_rank' => 0,
         'percent' => 0,
         'latest_at' => '',
+        'timing' => progress_timing([], 0, 0),
     ];
 
     if ($reportDate !== '') {
@@ -437,6 +523,9 @@ function public_progress_summary(): array
                     COUNT(*) AS total,
                     SUM(CASE WHEN raw_rank_only = 0 AND one_sentence <> "" THEN 1 ELSE 0 END) AS analyzed,
                     SUM(CASE WHEN raw_rank_only = 1 THEN 1 ELSE 0 END) AS raw_rank,
+                    MIN(created_at) AS started_at,
+                    MIN(CASE WHEN raw_rank_only = 0 AND one_sentence <> "" THEN created_at ELSE NULL END) AS first_analysis_at,
+                    MAX(CASE WHEN raw_rank_only = 0 AND one_sentence <> "" THEN created_at ELSE NULL END) AS latest_analysis_at,
                     MAX(created_at) AS latest_at
              FROM project_reports
              WHERE period_type = ? AND report_date = ?
@@ -459,6 +548,7 @@ function public_progress_summary(): array
                 'raw_rank' => $rawRank,
                 'percent' => $percent,
                 'latest_at' => (string) ($row['latest_at'] ?? ''),
+                'timing' => progress_timing($row, $rawRank, $analyzed),
             ];
         }
 
