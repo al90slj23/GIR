@@ -38,4 +38,8 @@ jobs:
           SEED_MODE: ${{ github.event.inputs.seed_mode || 'false' }}
           MAX_PROJECTS: "3"
           INGEST_BATCH_SIZE: "1"
+          RAW_INGEST_BATCH_SIZE: "25"
+          ANALYSIS_INGEST_BATCH_SIZE: "10"
+          REQUEST_DELAY_MS: "1200"
+          INGEST_DELAY_MS: "1500"
         run: node discover.js

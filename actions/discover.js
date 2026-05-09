@@ -1,6 +1,10 @@
 const runType = process.env.RUN_TYPE || process.argv[2] || "daily";
 const periodType = runType === "weekly" ? "weekly" : runType === "manual" ? "manual" : "daily";
 const ingestBatchSize = Math.max(1, Number(process.env.INGEST_BATCH_SIZE || "1"));
+const rawIngestBatchSize = Math.max(1, Number(process.env.RAW_INGEST_BATCH_SIZE || "50"));
+const analysisIngestBatchSize = Math.max(1, Number(process.env.ANALYSIS_INGEST_BATCH_SIZE || "20"));
+const requestDelayMs = Math.max(0, Number(process.env.REQUEST_DELAY_MS || "0"));
+const ingestDelayMs = Math.max(0, Number(process.env.INGEST_DELAY_MS || "0"));
 const seedMode = ["1", "true", "yes", "on"].includes(String(process.env.SEED_MODE || "").toLowerCase());
 
 const env = {
@@ -109,6 +113,10 @@ const ghHeaders = {
   "User-Agent": "GIR-Discover",
   ...(env.githubToken ? { "Authorization": `Bearer ${env.githubToken}` } : {}),
 };
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function clampNumber(value, fallback, min, max) {
   const number = Number(value);
@@ -745,6 +753,9 @@ async function ingestBatch(projects) {
 async function ingest(projects, batchSize = ingestBatchSize) {
   for (let index = 0; index < projects.length; index += batchSize) {
     await ingestBatch(projects.slice(index, index + batchSize));
+    if (ingestDelayMs > 0 && index + batchSize < projects.length) {
+      await sleep(ingestDelayMs);
+    }
   }
 }
 
@@ -783,7 +794,7 @@ async function main() {
   const rankingCandidates = rankingCandidatesFromBuckets(buckets);
   if (rankingCandidates.length) {
     console.log(`Ingesting raw ranking candidates: ${rankingCandidates.length}`);
-    await ingest(rankingCandidates.map((repo) => projectPayload(repo, { raw_rank_only: true })), 50);
+    await ingest(rankingCandidates.map((repo) => projectPayload(repo, { raw_rank_only: true })), rawIngestBatchSize);
   }
 
   const repos = config.analyze_all ? rankingCandidates : selectProjectsFromBuckets(buckets, config);
@@ -797,16 +808,22 @@ async function main() {
       const analysis = await analyze(repo, readme, history, config);
       analyzedBatch.push(projectPayload(repo, analysis));
       analyzedCount++;
-      if (analyzedBatch.length >= 20) {
-        await ingest(analyzedBatch, 20);
+      if (analyzedBatch.length >= analysisIngestBatchSize) {
+        await ingest(analyzedBatch, analysisIngestBatchSize);
         analyzedBatch = [];
+      }
+      if (requestDelayMs > 0) {
+        await sleep(requestDelayMs);
       }
     } catch (error) {
       console.error(`Failed ${repo.full_name}: ${error.message}`);
+      if (requestDelayMs > 0) {
+        await sleep(requestDelayMs);
+      }
     }
   }
   if (analyzedBatch.length) {
-    await ingest(analyzedBatch, 20);
+    await ingest(analyzedBatch, analysisIngestBatchSize);
   }
   if (!analyzedCount) {
     throw new Error("No projects analyzed");
