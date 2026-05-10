@@ -10,11 +10,29 @@ function render_header(string $title): void
     $assetVersion = is_file($assetPath) ? (string) filemtime($assetPath) : '1';
     ?>
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark" data-theme-choice="dark">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark light">
     <title><?= h($title) ?> - <?= h($siteName) ?></title>
+    <link rel="alternate" type="application/rss+xml" title="<?= h($siteName) ?> RSS" href="/rss.php">
+    <script>
+    (function () {
+        var storageKey = 'gir-theme';
+        var choice = 'dark';
+        try {
+            choice = localStorage.getItem(storageKey) || 'dark';
+        } catch (error) {}
+        if (['auto', 'dark', 'light'].indexOf(choice) === -1) {
+            choice = 'dark';
+        }
+        var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        var resolved = choice === 'auto' ? (prefersDark ? 'dark' : 'light') : choice;
+        document.documentElement.setAttribute('data-theme-choice', choice);
+        document.documentElement.setAttribute('data-theme', resolved);
+    })();
+    </script>
     <link rel="stylesheet" href="/assets/app.css?v=<?= h($assetVersion) ?>">
 </head>
 <body>
@@ -22,9 +40,18 @@ function render_header(string $title): void
     <div class="topbar-inner">
         <a class="brand" href="/index.php"><?= h($siteName) ?></a>
         <nav class="nav">
-            <a href="/index.php"><?= h(app_setting('nav_today_label', '今日榜')) ?></a>
-            <a href="/weekly.php"><?= h(app_setting('nav_weekly_label', '本周榜')) ?></a>
             <a href="/admin/index.php"><?= h(app_setting('nav_admin_label', '后台')) ?></a>
+            <a href="/rss.php">RSS</a>
+            <div class="theme-switcher" data-theme-switcher>
+                <button class="theme-toggle" type="button" data-theme-toggle aria-haspopup="true" aria-expanded="false" aria-label="切换颜色模式">
+                    <span data-theme-label>深色</span>
+                </button>
+                <div class="theme-menu" data-theme-menu hidden>
+                    <button type="button" data-theme-option="auto">自动</button>
+                    <button type="button" data-theme-option="dark">深色</button>
+                    <button type="button" data-theme-option="light">浅色</button>
+                </div>
+            </div>
         </nav>
     </div>
 </header>
@@ -36,6 +63,110 @@ function render_footer(): void
 {
     ?>
 </main>
+<script>
+(function () {
+    var root = document.documentElement;
+    var switcher = document.querySelector('[data-theme-switcher]');
+    if (!switcher) {
+        return;
+    }
+
+    var storageKey = 'gir-theme';
+    var labels = {
+        auto: '自动',
+        dark: '深色',
+        light: '浅色'
+    };
+    var toggle = switcher.querySelector('[data-theme-toggle]');
+    var label = switcher.querySelector('[data-theme-label]');
+    var menu = switcher.querySelector('[data-theme-menu]');
+    var options = Array.prototype.slice.call(switcher.querySelectorAll('[data-theme-option]'));
+    var media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+
+    function normalize(choice) {
+        return labels[choice] ? choice : 'dark';
+    }
+
+    function currentChoice() {
+        try {
+            return normalize(localStorage.getItem(storageKey) || root.getAttribute('data-theme-choice') || 'dark');
+        } catch (error) {
+            return normalize(root.getAttribute('data-theme-choice') || 'dark');
+        }
+    }
+
+    function resolveTheme(choice) {
+        if (choice === 'auto') {
+            return media && media.matches ? 'dark' : 'light';
+        }
+        return choice;
+    }
+
+    function applyTheme(choice, persist) {
+        choice = normalize(choice);
+        if (persist) {
+            try {
+                localStorage.setItem(storageKey, choice);
+            } catch (error) {}
+        }
+        root.setAttribute('data-theme-choice', choice);
+        root.setAttribute('data-theme', resolveTheme(choice));
+        if (label) {
+            label.textContent = labels[choice];
+        }
+        options.forEach(function (option) {
+            var active = option.getAttribute('data-theme-option') === choice;
+            option.classList.toggle('active', active);
+            option.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
+    }
+
+    function setOpen(open) {
+        if (!menu || !toggle) {
+            return;
+        }
+        menu.hidden = !open;
+        toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+
+    applyTheme(currentChoice(), false);
+
+    if (toggle && menu) {
+        toggle.addEventListener('click', function () {
+            setOpen(menu.hidden);
+        });
+    }
+    options.forEach(function (option) {
+        option.addEventListener('click', function () {
+            applyTheme(option.getAttribute('data-theme-option'), true);
+            setOpen(false);
+        });
+    });
+    document.addEventListener('click', function (event) {
+        if (!switcher.contains(event.target)) {
+            setOpen(false);
+        }
+    });
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') {
+            setOpen(false);
+        }
+    });
+
+    if (media) {
+        var syncAuto = function () {
+            if (currentChoice() === 'auto') {
+                applyTheme('auto', false);
+            }
+        };
+        if (media.addEventListener) {
+            media.addEventListener('change', syncAuto);
+        } else if (media.addListener) {
+            media.addListener(syncAuto);
+        }
+    }
+})();
+</script>
 </body>
 </html>
 <?php
@@ -231,6 +362,7 @@ function render_date_range_filter(string $basePath, string $activePlatform, stri
             <input type="hidden" name="tag" value="<?= h($activeTag) ?>">
             <input type="hidden" name="view" value="<?= h($activeView) ?>">
             <input type="hidden" name="range" value="custom">
+            <span class="date-custom-title">自定义</span>
             <label>
                 <span>自定义</span>
                 <input type="date" name="start_date" value="<?= h((string) $dateRange['start']) ?>">
