@@ -411,9 +411,9 @@ function render_progress_card_body(string $kind, array $data): void
     <span><strong data-progress-percent><?= h($percentText) ?>%</strong> 完成</span>
     <?php if ($isCollection): ?>
         <span><?= $active ? '已入库候选' : '今日候选' ?> <strong data-progress-primary><?= number_format((int) ($data['raw_rank'] ?? 0)) ?></strong></span>
-        <span><?= $active ? '本轮目标' : '今日项目' ?> <strong data-progress-secondary><?= number_format((int) ($active ? ($data['target'] ?? 0) : ($data['projects'] ?? 0))) ?></strong></span>
+        <span><?= $active ? '本轮目标' : '今日去重项目' ?> <strong data-progress-secondary><?= number_format((int) ($active ? ($data['target'] ?? 0) : ($data['projects'] ?? 0))) ?></strong></span>
         <?php if ($active): ?>
-            <span>项目数 <strong data-progress-tertiary><?= number_format((int) ($data['projects'] ?? 0)) ?></strong></span>
+            <span>去重项目 <strong data-progress-tertiary><?= number_format((int) ($data['projects'] ?? 0)) ?></strong></span>
         <?php endif; ?>
         <span data-progress-date><?= h((string) (($data['report_date'] ?? '') ?: '-')) ?></span>
     <?php else: ?>
@@ -583,8 +583,8 @@ function render_deepseek_progress_panel(): void
       return '<div class="progress-meta">'
         + '<span><strong data-progress-percent>' + percentText + '%</strong> 完成</span>'
         + '<span>' + (active ? '已入库候选' : '今日候选') + ' <strong data-progress-primary>' + formatNumber(data.raw_rank) + '</strong></span>'
-        + '<span>' + (active ? '本轮目标' : '今日项目') + ' <strong data-progress-secondary>' + formatNumber(active ? data.target : data.projects) + '</strong></span>'
-        + (active ? '<span>项目数 <strong data-progress-tertiary>' + formatNumber(data.projects) + '</strong></span>' : '')
+        + '<span>' + (active ? '本轮目标' : '今日去重项目') + ' <strong data-progress-secondary>' + formatNumber(active ? data.target : data.projects) + '</strong></span>'
+        + (active ? '<span>去重项目 <strong data-progress-tertiary>' + formatNumber(data.projects) + '</strong></span>' : '')
         + '<span data-progress-date>' + escapeHtml(data.report_date || '-') + '</span>'
         + '</div>';
     }

@@ -1199,6 +1199,7 @@ function public_collection_progress_summary(?array $latestRunRow): array
     $latestDateRow = db_one("SELECT MAX(report_date) AS report_date FROM project_reports WHERE period_type = 'daily' AND raw_rank_only = 1");
     $reportDate = (string) ($latestDateRow['report_date'] ?? '');
     $rows = [];
+    $uniqueProjectTotal = 0;
     if ($reportDate !== '') {
         $rows = db_all(
             'SELECT r.source_platform,
@@ -1212,18 +1213,26 @@ function public_collection_progress_summary(?array $latestRunRow): array
              ORDER BY ' . ranking_platform_order_sql('source_platform') . ' ASC, raw_rank DESC',
             ['daily', $reportDate]
         );
+        $uniqueRow = db_one(
+            'SELECT COUNT(DISTINCT r.project_id) AS total
+             FROM project_reports r
+             INNER JOIN projects p ON p.id = r.project_id
+             WHERE r.period_type = ? AND r.report_date = ? AND r.raw_rank_only = 1 AND p.is_hidden = 0',
+            ['daily', $reportDate]
+        );
+        $uniqueProjectTotal = (int) ($uniqueRow['total'] ?? 0);
     }
 
     $platforms = [];
     $rawRank = 0;
-    $projectTotal = 0;
+    $platformProjectTotal = 0;
     $latestAt = '';
     foreach ($rows as $row) {
         $platformRaw = (int) ($row['raw_rank'] ?? 0);
         $platformProjects = (int) ($row['projects'] ?? 0);
         $platform = (string) ($row['source_platform'] ?? '');
         $rawRank += $platformRaw;
-        $projectTotal += $platformProjects;
+        $platformProjectTotal += $platformProjects;
         $rowLatestAt = (string) ($row['latest_at'] ?? '');
         if ($rowLatestAt > $latestAt) {
             $latestAt = $rowLatestAt;
@@ -1256,7 +1265,8 @@ function public_collection_progress_summary(?array $latestRunRow): array
         'mode' => $active ? 'running' : 'idle',
         'status_text' => $active ? '正在采集' : '等待下一轮',
         'raw_rank' => $rawRank,
-        'projects' => $projectTotal,
+        'projects' => $uniqueProjectTotal,
+        'platform_projects' => $platformProjectTotal,
         'target' => $target,
         'percent' => $percent,
         'latest_at' => $latestAt,
