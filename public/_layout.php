@@ -437,7 +437,7 @@ function render_progress_card_body(string $kind, array $data): void
             <span><?= h((string) (($next['at'] ?? '') ?: '-')) ?></span>
         </div>
         <div class="progress-countdown">
-            <strong><?= h((string) (($next['remaining_text'] ?? '') ?: '计算中')) ?></strong>
+            <strong data-countdown-seconds="<?= (int) ($next['remaining_seconds'] ?? 0) ?>"><?= h((string) (($next['remaining_text'] ?? '') ?: '计算中')) ?></strong>
             <span>倒计时</span>
         </div>
     </div>
@@ -519,6 +519,27 @@ function render_deepseek_progress_panel(): void
     return percent.toLocaleString('zh-CN', { maximumFractionDigits: 1 });
   }
 
+  function formatDurationPrecise(value) {
+    var seconds = Math.max(0, Math.floor(Number(value || 0)));
+    var days = Math.floor(seconds / 86400);
+    var hours = Math.floor((seconds % 86400) / 3600);
+    var minutes = Math.floor((seconds % 3600) / 60);
+    var remainingSeconds = seconds % 60;
+    var parts = [];
+
+    if (days > 0) {
+      parts.push(days + ' 天');
+    }
+    if (days > 0 || hours > 0) {
+      parts.push(hours + ' 时');
+    }
+    if (days > 0 || hours > 0 || minutes > 0) {
+      parts.push(minutes + ' 分');
+    }
+    parts.push(remainingSeconds + ' 秒');
+    return parts.join(' ');
+  }
+
   function escapeHtml(value) {
     return String(value || '').replace(/[&<>"']/g, function (char) {
       return {
@@ -574,11 +595,13 @@ function render_deepseek_progress_panel(): void
 
   function renderNextPlan(kind, schedule) {
     var title = kind === 'collection' ? '下一次采集计划' : '下一次 GIR 解读计划';
+    var seconds = Math.max(0, Math.floor(Number(schedule.remaining_seconds || 0)));
+    var countdownText = Number.isFinite(seconds) ? formatDurationPrecise(seconds) : (schedule.remaining_text || '计算中');
     return '<div class="progress-next">'
       + '<div><div class="progress-section-title">' + title + '</div>'
       + '<strong>' + escapeHtml(schedule.label || '等待计划') + '</strong>'
       + '<span>' + escapeHtml(schedule.at || '-') + '</span></div>'
-      + '<div class="progress-countdown"><strong>' + escapeHtml(schedule.remaining_text || '计算中') + '</strong><span>倒计时</span></div>'
+      + '<div class="progress-countdown"><strong data-countdown-seconds="' + seconds + '">' + escapeHtml(countdownText) + '</strong><span>倒计时</span></div>'
       + '</div>';
   }
 
@@ -633,6 +656,17 @@ function render_deepseek_progress_panel(): void
     }
     renderCard('collection', payload.collection);
     renderCard('gir', payload.gir || payload.focus);
+    updateCountdowns();
+  }
+
+  function updateCountdowns() {
+    panel.querySelectorAll('[data-countdown-seconds]').forEach(function (node) {
+      var seconds = Math.max(0, Math.floor(Number(node.getAttribute('data-countdown-seconds') || 0)));
+      node.textContent = formatDurationPrecise(seconds);
+      if (seconds > 0) {
+        node.setAttribute('data-countdown-seconds', String(seconds - 1));
+      }
+    });
   }
 
   function loadProgress() {
@@ -643,6 +677,7 @@ function render_deepseek_progress_panel(): void
   }
 
   window.setTimeout(loadProgress, 1200);
+  window.setInterval(updateCountdowns, 1000);
   window.setInterval(loadProgress, 15000);
 })();
 </script>

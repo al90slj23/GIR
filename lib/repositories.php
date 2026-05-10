@@ -93,6 +93,32 @@ function progress_duration_text(?int $seconds): string
     return $hours > 0 ? $days . ' 天 ' . $hours . ' 时' : $days . ' 天';
 }
 
+function progress_duration_precise_text(?int $seconds): string
+{
+    if ($seconds === null || $seconds < 0) {
+        return '计算中';
+    }
+
+    $days = (int) floor($seconds / 86400);
+    $hours = (int) floor(($seconds % 86400) / 3600);
+    $minutes = (int) floor(($seconds % 3600) / 60);
+    $remainingSeconds = $seconds % 60;
+    $parts = [];
+
+    if ($days > 0) {
+        $parts[] = $days . ' 天';
+    }
+    if ($days > 0 || $hours > 0) {
+        $parts[] = $hours . ' 时';
+    }
+    if ($days > 0 || $hours > 0 || $minutes > 0) {
+        $parts[] = $minutes . ' 分';
+    }
+    $parts[] = $remainingSeconds . ' 秒';
+
+    return implode(' ', $parts);
+}
+
 function progress_rate_text(float $ratePerHour): string
 {
     if ($ratePerHour <= 0) {
@@ -969,7 +995,7 @@ function progress_next_schedule(string $kind): array
     $weekly = $weekly ?: strtotime('next monday 09:30:00');
     $useWeekly = $weekly !== false && $weekly < $daily;
     $timestamp = $useWeekly ? (int) $weekly : (int) $daily;
-    $baseLabel = $useWeekly ? '周榜自动采集' : '日榜自动采集';
+    $baseLabel = $useWeekly ? '每周自动采集' : '每日自动采集';
     $label = $kind === 'gir' ? '随下一次自动采集触发 GIR 解读' : $baseLabel;
     $seconds = max(0, $timestamp - $now);
 
@@ -977,7 +1003,7 @@ function progress_next_schedule(string $kind): array
         'label' => $label,
         'at' => date('Y-m-d H:i:s', $timestamp),
         'remaining_seconds' => $seconds,
-        'remaining_text' => progress_duration_text($seconds),
+        'remaining_text' => progress_duration_precise_text($seconds),
     ];
 }
 
