@@ -696,7 +696,7 @@ h2 {
 
 .progress-next {
   display: grid;
-  align-items: center;
+  align-items: start;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
   border: 1px solid var(--line-soft);
@@ -708,6 +708,7 @@ h2 {
 
 .progress-next .progress-section-title {
   margin-top: 0;
+  word-break: keep-all;
 }
 
 .progress-next strong,
@@ -731,6 +732,7 @@ h2 {
 .progress-next > div:first-child > strong {
   overflow: visible;
   text-overflow: clip;
+  word-break: keep-all;
   white-space: normal;
 }
 
@@ -750,6 +752,30 @@ h2 {
 .progress-countdown {
   min-width: 94px;
   text-align: right;
+}
+
+.progress-card .progress-next {
+  grid-template-columns: 1fr;
+}
+
+.progress-card .progress-countdown {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 10px;
+  min-width: 0;
+  text-align: left;
+}
+
+.progress-card .progress-countdown strong {
+  margin-left: auto;
+}
+
+.progress-card .progress-countdown span {
+  margin-top: 0;
+  white-space: nowrap;
 }
 
 .progress-stat-grid {

@@ -432,7 +432,7 @@ function render_progress_card_body(string $kind, array $data): void
 <?php else: ?>
     <div class="progress-next">
         <div>
-            <div class="progress-section-title"><?= $isCollection ? '下一次采集计划' : '下一次 GIR 解读计划' ?></div>
+            <div class="progress-section-title"><?= $isCollection ? '下一次采集计划' : '下次自动触发' ?></div>
             <strong><?= h((string) (($next['label'] ?? '') ?: '等待计划')) ?></strong>
             <span><?= h((string) (($next['at'] ?? '') ?: '-')) ?></span>
         </div>
@@ -594,7 +594,7 @@ function render_deepseek_progress_panel(): void
   }
 
   function renderNextPlan(kind, schedule) {
-    var title = kind === 'collection' ? '下一次采集计划' : '下一次 GIR 解读计划';
+    var title = kind === 'collection' ? '下一次采集计划' : '下次自动触发';
     var seconds = Math.max(0, Math.floor(Number(schedule.remaining_seconds || 0)));
     var countdownText = Number.isFinite(seconds) ? formatDurationPrecise(seconds) : (schedule.remaining_text || '计算中');
     return '<div class="progress-next">'

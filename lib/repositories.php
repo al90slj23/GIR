@@ -996,7 +996,7 @@ function progress_next_schedule(string $kind): array
     $useWeekly = $weekly !== false && $weekly < $daily;
     $timestamp = $useWeekly ? (int) $weekly : (int) $daily;
     $baseLabel = $useWeekly ? '每周自动采集' : '每日自动采集';
-    $label = $kind === 'gir' ? '下一次 GIR 解读' : $baseLabel;
+    $label = $kind === 'gir' ? ($useWeekly ? '随每周采集触发' : '随每日采集触发') : $baseLabel;
     $seconds = max(0, $timestamp - $now);
 
     return [
@@ -1192,6 +1192,7 @@ function public_gir_progress_summary(?array $latestRunRow): array
 
     $total = (int) ($projectTotals['total'] ?? 0);
     $analyzed = (int) ($analysisTotals['analyzed'] ?? 0);
+    $remaining = max(0, $total - $analyzed);
     $percent = $total > 0 ? round(min(100, ($analyzed / $total) * 100), 1) : 0;
     $firstAnalysisAt = (string) ($analysisTotals['first_analysis_at'] ?? '');
     $latestAnalysisAt = (string) ($analysisTotals['latest_analysis_at'] ?? '');
@@ -1230,7 +1231,7 @@ function public_gir_progress_summary(?array $latestRunRow): array
         'latest_at' => $latestAnalysisAt,
         'active' => $active,
         'mode' => $active ? 'running' : 'idle',
-        'status_text' => $active ? '正在解读' : '等待下一轮',
+        'status_text' => $active ? '正在解读' : ($remaining > 0 ? '待触发解读' : '等待新增'),
         'timing' => progress_timing($timingRow, $total, $analyzed),
         'next_schedule' => progress_next_schedule('gir'),
         'history' => progress_run_history_stats('gir'),
