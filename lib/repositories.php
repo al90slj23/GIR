@@ -966,7 +966,7 @@ function public_collection_progress_summary(?array $latestRunRow): array
              INNER JOIN projects p ON p.id = r.project_id
              WHERE r.period_type = ? AND r.report_date = ? AND r.raw_rank_only = 1 AND p.is_hidden = 0' . ranking_primary_platform_filter_sql('r.') . '
              GROUP BY r.source_platform
-             ORDER BY ' . ranking_platform_order_sql('r.source_platform') . ' ASC, raw_rank DESC',
+             ORDER BY ' . ranking_platform_order_sql('source_platform') . ' ASC, raw_rank DESC',
             ['daily', $reportDate]
         );
     }
@@ -1048,7 +1048,7 @@ function public_gir_progress_summary(?array $latestRunRow): array
               AND ar.one_sentence <> ""
          WHERE rr.raw_rank_only = 1 AND p.is_hidden = 0' . ranking_primary_platform_filter_sql('rr.') . '
          GROUP BY rr.source_platform
-         ORDER BY ' . ranking_platform_order_sql('rr.source_platform') . ' ASC, raw_rank DESC
+         ORDER BY ' . ranking_platform_order_sql('source_platform') . ' ASC, raw_rank DESC
          LIMIT 8'
     );
 
