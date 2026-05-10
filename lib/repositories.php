@@ -301,7 +301,8 @@ function raw_rank_analysis_join_sql(): string
 
 function ranking_primary_platform_filter_sql(string $alias = 'r'): string
 {
-    return ' AND ' . $alias . ".source_platform NOT IN ('github', 'github_search')";
+    $prefix = $alias === '' ? '' : $alias . '.';
+    return ' AND ' . $prefix . "source_platform NOT IN ('github', 'github_search')";
 }
 
 function available_ranking_platforms(string $periodType, string $date = ''): array
@@ -696,7 +697,7 @@ function public_progress_summary(): array
                     MAX(CASE WHEN raw_rank_only = 0 AND one_sentence <> "" THEN created_at ELSE NULL END) AS latest_analysis_at,
                     MAX(created_at) AS latest_at
              FROM project_reports
-             WHERE period_type = ? AND report_date = ?
+             WHERE period_type = ? AND report_date = ?' . ranking_primary_platform_filter_sql('') . '
              GROUP BY source_platform
              ORDER BY latest_at DESC, total DESC, source_platform ASC
              LIMIT 8',
