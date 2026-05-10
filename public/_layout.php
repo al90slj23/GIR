@@ -161,9 +161,11 @@ function render_platform_tabs(string $basePath, array $platforms, string $active
         <?php
         $value = (string) $platform['source_platform'];
         $query = http_build_query(ranking_query_params($value, $tag, $activeView, $dateRange));
+        $classes = trim(($activePlatform === $value ? 'active ' : '') . ($value === 'backfill' ? 'is-backfill' : ''));
         ?>
-        <a class="<?= $activePlatform === $value ? 'active' : '' ?>" href="<?= h($basePath) ?>?<?= h($query) ?>">
-            <?= h(ranking_platform_label($value)) ?> · <?= (int) $platform['total'] ?>
+        <a class="<?= h($classes) ?>" href="<?= h($basePath) ?>?<?= h($query) ?>">
+            <span class="platform-tab-name"><?= h(ranking_platform_label($value)) ?></span>
+            <span class="platform-tab-count"><?= number_format((int) $platform['total']) ?></span>
         </a>
     <?php endforeach; ?>
 </div>

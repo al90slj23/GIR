@@ -11,7 +11,7 @@ function ranking_platform_labels(): array
         'trendshift' => 'Trendshift 趋势',
         'reporank' => 'RepoRank 排行',
         'gitrepotrend' => 'GitRepoTrend 热度',
-        'backfill' => '全量重解读',
+        'backfill' => '全部项目库',
     ];
 }
 
@@ -235,6 +235,21 @@ function raw_rank_report_sql(): string
     return " AND r.raw_rank_only = 1";
 }
 
+function ranking_platform_order_sql(string $column = 'source_platform'): string
+{
+    return 'CASE ' . $column . "
+        WHEN 'github_trending' THEN 10
+        WHEN 'github' THEN 20
+        WHEN 'github_search' THEN 21
+        WHEN 'gitrepotrend' THEN 30
+        WHEN 'ossinsight' THEN 40
+        WHEN 'trendshift' THEN 50
+        WHEN 'reporank' THEN 60
+        WHEN 'backfill' THEN 999
+        ELSE 500
+    END";
+}
+
 function raw_rank_analysis_select_sql(): string
 {
     return ', ar.one_sentence AS analysis_one_sentence,
@@ -269,7 +284,7 @@ function available_ranking_platforms(string $periodType, string $date = ''): arr
          INNER JOIN projects p ON p.id = r.project_id
          WHERE r.period_type = ? AND p.is_hidden = 0' . raw_rank_report_sql() . $dateFilter['sql'] . '
          GROUP BY r.source_platform
-         ORDER BY total DESC, r.source_platform ASC',
+         ORDER BY ' . ranking_platform_order_sql('source_platform') . ', total DESC, r.source_platform ASC',
         array_merge([$periodType], $dateFilter['params'])
     );
 }
@@ -283,7 +298,7 @@ function available_ranking_platforms_by_range(string $periodType, array $dateRan
          INNER JOIN projects p ON p.id = r.project_id
          WHERE r.period_type = ? AND p.is_hidden = 0' . raw_rank_report_sql() . $dateFilter['sql'] . '
          GROUP BY r.source_platform
-         ORDER BY total DESC, r.source_platform ASC',
+         ORDER BY ' . ranking_platform_order_sql('source_platform') . ', total DESC, r.source_platform ASC',
         array_merge([$periodType], $dateFilter['params'])
     );
 }
