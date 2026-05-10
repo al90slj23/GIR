@@ -261,9 +261,18 @@ a:hover {
 }
 
 .wrap {
-  max-width: var(--wrap);
+  display: grid;
+  grid-template-columns: minmax(280px, .46fr) minmax(680px, var(--wrap)) minmax(280px, .46fr);
+  align-items: start;
+  gap: 0 18px;
+  max-width: min(1880px, calc(100vw - 32px));
   margin: 0 auto;
   padding: 40px 28px 64px;
+}
+
+.wrap > :not(script) {
+  grid-column: 2;
+  min-width: 0;
 }
 
 .page-head {
@@ -461,10 +470,7 @@ h2 {
 }
 
 .progress-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.28fr) minmax(340px, .72fr);
-  gap: 14px;
-  margin: 0 0 22px;
+  display: contents;
 }
 
 .progress-panel {
@@ -491,6 +497,21 @@ h2 {
   box-shadow: var(--shadow-sm);
 }
 
+.progress-card.is-collection {
+  grid-column: 1;
+  grid-row: 2 / span 10;
+}
+
+.progress-card.is-gir {
+  grid-column: 3;
+  grid-row: 2 / span 10;
+}
+
+.progress-card {
+  position: sticky;
+  top: 86px;
+}
+
 .search-entry-panel h2 {
   margin: 0 0 4px;
   font-size: 16px;
@@ -506,6 +527,14 @@ h2 {
 .search-entry-form input[type="search"] {
   min-width: 0;
   width: 100%;
+}
+
+.search-entry-form .button {
+  flex: 0 0 auto;
+  min-width: 72px;
+  white-space: nowrap;
+  word-break: keep-all;
+  writing-mode: horizontal-tb;
 }
 
 .progress-panel::before {
@@ -617,8 +646,13 @@ h2 {
   margin-top: 14px;
 }
 
+.progress-card .progress-timing,
 .progress-card.is-gir .progress-timing {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.progress-card .progress-timing span:last-child {
+  grid-column: 1 / -1;
 }
 
 .progress-timing span {
@@ -1241,6 +1275,33 @@ select {
   text-align: center;
 }
 
+@media (max-width: 1500px) {
+  .wrap {
+    display: block;
+    max-width: var(--wrap);
+  }
+
+  .wrap > :not(script) {
+    grid-column: auto;
+  }
+
+  .progress-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(320px, .9fr);
+    gap: 14px;
+    margin: 0 0 22px;
+  }
+
+  .progress-card,
+  .progress-card.is-collection,
+  .progress-card.is-gir {
+    position: relative;
+    top: auto;
+    grid-column: auto;
+    grid-row: auto;
+  }
+}
+
 @media (max-width: 820px) {
   .topbar-inner,
   .page-head {
@@ -1308,6 +1369,10 @@ select {
   .search-entry-form {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .search-entry-form .button {
+    width: 100%;
   }
 
   .date-custom-form {
