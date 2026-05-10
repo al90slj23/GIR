@@ -400,8 +400,10 @@ function render_progress_card_body(string $kind, array $data): void
     $timing = $data['timing'] ?? [];
     $history = $data['history'] ?? [];
     $next = $data['next_schedule'] ?? [];
+    $pending = $data['pending'] ?? [];
     $isCollection = $kind === 'collection';
-    $active = !empty($data['active']);
+    $mode = (string) ($data['mode'] ?? (!empty($data['active']) ? 'running' : 'idle'));
+    $active = $mode === 'running';
     $percent = (float) ($data['percent'] ?? 0);
     $percentText = rtrim(rtrim(number_format($percent, 1, '.', ''), '0'), '.');
     ?>
@@ -420,7 +422,7 @@ function render_progress_card_body(string $kind, array $data): void
         <span>剩余 <strong data-progress-tertiary><?= number_format((int) ($timing['remaining'] ?? 0)) ?></strong></span>
     <?php endif; ?>
 </div>
-<?php if ($active): ?>
+<?php if ($mode === 'running'): ?>
     <div class="progress-section-title"><?= $isCollection ? '本轮采集状态' : '当前解读状态' ?></div>
     <div class="progress-timing">
         <span><strong><?= h((string) ($timing['elapsed_text'] ?? '计算中')) ?></strong><em>任务已运行</em></span>
@@ -428,6 +430,18 @@ function render_progress_card_body(string $kind, array $data): void
         <span><strong><?= h((string) ($timing['eta_text'] ?? '计算中')) ?></strong><em>预计剩余时长</em></span>
         <span><strong><?= h((string) ($timing['estimated_total_text'] ?? '计算中')) ?></strong><em>预计总耗时</em></span>
         <span><strong><?= h((string) (($timing['estimated_finish_at'] ?? '') ?: '计算中')) ?></strong><em>预计完成时间</em></span>
+    </div>
+<?php elseif ($mode === 'pending'): ?>
+    <div class="progress-next progress-next-pending">
+        <div>
+            <div class="progress-section-title">过渡状态</div>
+            <strong><?= h((string) (($pending['label'] ?? '') ?: 'GitHub 工作流已启动')) ?></strong>
+            <span><?= h((string) (($pending['summary'] ?? '') ?: '等待首批结果回写')) ?></span>
+        </div>
+        <div class="progress-countdown">
+            <strong><?= h((string) (($pending['started_at'] ?? '') ?: '-')) ?></strong>
+            <span>启动时间</span>
+        </div>
     </div>
 <?php else: ?>
     <div class="progress-next">
@@ -469,6 +483,8 @@ function render_deepseek_progress_panel(): void
     $girPercent = (float) ($gir['percent'] ?? 0);
     $collectionPercentText = rtrim(rtrim(number_format($collectionPercent, 1, '.', ''), '0'), '.');
     $girPercentText = rtrim(rtrim(number_format($girPercent, 1, '.', ''), '0'), '.');
+    $collectionMode = (string) ($collection['mode'] ?? (!empty($collection['active']) ? 'running' : 'idle'));
+    $girMode = (string) ($gir['mode'] ?? (!empty($gir['active']) ? 'running' : 'idle'));
     ?>
 <section class="progress-grid" data-progress-panel>
     <section class="progress-panel progress-card is-collection" data-progress-card="collection">
@@ -477,7 +493,7 @@ function render_deepseek_progress_panel(): void
                 <div class="progress-kicker">平台采集进度</div>
                 <h2 data-progress-title><?= h((string) ($collection['label'] ?? '平台采集入库')) ?> · <?= h($collectionPercentText) ?>%</h2>
             </div>
-            <span class="progress-status <?= !empty($collection['active']) ? 'is-active' : 'is-idle' ?>" data-progress-status><?= h((string) ($collection['status_text'] ?? '最近更新')) ?></span>
+            <span class="progress-status <?= $collectionMode === 'running' ? 'is-active' : ($collectionMode === 'pending' ? 'is-pending' : 'is-idle') ?>" data-progress-status><?= h((string) ($collection['status_text'] ?? '最近更新')) ?></span>
         </div>
         <div class="progress-meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= h($collectionPercentText) ?>">
             <span data-progress-bar style="width: <?= h($collectionPercentText) ?>%"></span>
@@ -492,7 +508,7 @@ function render_deepseek_progress_panel(): void
                 <div class="progress-kicker">GIR 解读进度</div>
                 <h2 data-progress-title><?= h((string) ($gir['label'] ?? '全局 GIR 解读')) ?> · <?= h($girPercentText) ?>%</h2>
             </div>
-            <span class="progress-status <?= !empty($gir['active']) ? 'is-active' : 'is-idle' ?>" data-progress-status><?= h((string) ($gir['status_text'] ?? '最近更新')) ?></span>
+            <span class="progress-status <?= $girMode === 'running' ? 'is-active' : ($girMode === 'pending' ? 'is-pending' : 'is-idle') ?>" data-progress-status><?= h((string) ($gir['status_text'] ?? '最近更新')) ?></span>
         </div>
         <div class="progress-meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= h($girPercentText) ?>">
             <span data-progress-bar style="width: <?= h($girPercentText) ?>%"></span>
@@ -593,6 +609,16 @@ function render_deepseek_progress_panel(): void
       + '</div>';
   }
 
+  function renderPendingTask(data) {
+    var pending = data && data.pending ? data.pending : {};
+    return '<div class="progress-next progress-next-pending">'
+      + '<div><div class="progress-section-title">过渡状态</div>'
+      + '<strong>' + escapeHtml(pending.label || 'GitHub 工作流已启动') + '</strong>'
+      + '<span>' + escapeHtml(pending.summary || '等待首批结果回写') + '</span></div>'
+      + '<div class="progress-countdown"><strong>' + escapeHtml(pending.started_at || '-') + '</strong><span>启动时间</span></div>'
+      + '</div>';
+  }
+
   function renderNextPlan(kind, schedule) {
     var title = kind === 'collection' ? '下一次采集计划' : '下次自动触发';
     var seconds = Math.max(0, Math.floor(Number(schedule.remaining_seconds || 0)));
@@ -618,8 +644,11 @@ function render_deepseek_progress_panel(): void
 
   function renderBody(kind, data, percentText) {
     var timing = data.timing || {};
+    var mode = data.mode || (data.active ? 'running' : 'idle');
     return renderProgressMeta(kind, data, timing, percentText)
-      + (data.active ? renderCurrentTask(kind, timing) : renderNextPlan(kind, data.next_schedule || {}))
+      + (mode === 'running'
+          ? renderCurrentTask(kind, timing)
+          : (mode === 'pending' ? renderPendingTask(data) : renderNextPlan(kind, data.next_schedule || {})))
       + renderHistory(data.history || {}, kind)
       + renderPlatforms(data.platforms || [], kind);
   }
@@ -646,7 +675,9 @@ function render_deepseek_progress_panel(): void
     }
     if (status) {
       status.textContent = data.status_text || (data.active ? '正在更新' : '最近更新');
-      status.className = 'progress-status ' + (data.active ? 'is-active' : 'is-idle');
+      status.className = 'progress-status ' + ((data.mode || (data.active ? 'running' : 'idle')) === 'running'
+        ? 'is-active'
+        : ((data.mode || (data.active ? 'running' : 'idle')) === 'pending' ? 'is-pending' : 'is-idle'));
     }
   }
 

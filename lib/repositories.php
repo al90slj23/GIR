@@ -745,6 +745,98 @@ function github_search_repositories(string $query, int $limit = 20): array
     ];
 }
 
+function github_discover_active_run(): ?array
+{
+    global $config;
+
+    static $memo = false;
+    if ($memo !== false) {
+        return is_array($memo) ? $memo : null;
+    }
+
+    $owner = trim((string) ($config['github']['owner'] ?? ''));
+    $repo = trim((string) ($config['github']['repo'] ?? ''));
+    $token = trim((string) ($config['github']['token'] ?? ''));
+    $workflow = trim((string) ($config['github']['workflow'] ?? 'discover.yml'));
+    if ($owner === '' || $repo === '' || $token === '' || !function_exists('curl_init')) {
+        $memo = null;
+        return null;
+    }
+
+    $cacheKey = md5($owner . '/' . $repo . '/' . $workflow);
+    $cachePath = rtrim(sys_get_temp_dir(), '/\\') . DIRECTORY_SEPARATOR . 'gir_discover_run_' . $cacheKey . '.json';
+    $cacheTtl = 12;
+
+    if (is_file($cachePath)) {
+        $raw = @file_get_contents($cachePath);
+        $cached = is_string($raw) ? json_decode($raw, true) : null;
+        if (is_array($cached) && (int) ($cached['cached_at'] ?? 0) + $cacheTtl >= time()) {
+            $memo = is_array($cached['data'] ?? null) ? $cached['data'] : null;
+            return $memo;
+        }
+    }
+
+    $url = 'https://api.github.com/repos/' . rawurlencode($owner) . '/' . rawurlencode($repo)
+        . '/actions/workflows/' . rawurlencode($workflow) . '/runs?' . http_build_query([
+            'per_page' => 6,
+            'exclude_pull_requests' => 'true',
+        ]);
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_USERAGENT => 'GIR Progress Monitor',
+        CURLOPT_HTTPHEADER => [
+            'Accept: application/vnd.github+json',
+            'Authorization: Bearer ' . $token,
+            'X-GitHub-Api-Version: 2022-11-28',
+        ],
+        CURLOPT_TIMEOUT => 6,
+        CURLOPT_CONNECTTIMEOUT => 3,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => 0,
+    ]);
+
+    $response = curl_exec($ch);
+    $errno = curl_errno($ch);
+    $http = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    $result = null;
+    if (!$errno && $http >= 200 && $http < 300) {
+        $payload = json_decode((string) $response, true);
+        $runs = is_array($payload['workflow_runs'] ?? null) ? $payload['workflow_runs'] : [];
+        foreach ($runs as $run) {
+            if (!is_array($run)) {
+                continue;
+            }
+            $status = (string) ($run['status'] ?? '');
+            if ($status === 'completed') {
+                continue;
+            }
+            $result = [
+                'run_id' => (int) ($run['id'] ?? 0),
+                'status' => $status,
+                'event' => (string) ($run['event'] ?? ''),
+                'title' => (string) ($run['display_title'] ?? ''),
+                'html_url' => (string) ($run['html_url'] ?? ''),
+                'created_at' => normalize_datetime($run['created_at'] ?? null) ?: '',
+                'started_at' => normalize_datetime($run['run_started_at'] ?? null) ?: '',
+                'updated_at' => normalize_datetime($run['updated_at'] ?? null) ?: '',
+            ];
+            break;
+        }
+    }
+
+    @file_put_contents($cachePath, json_encode([
+        'cached_at' => time(),
+        'data' => $result,
+    ], JSON_UNESCAPED_UNICODE));
+
+    $memo = $result;
+    return $result;
+}
+
 function github_search_query_hash(string $query): string
 {
     return sha1(trim(strtolower($query)));
@@ -1175,7 +1267,7 @@ function public_collection_progress_summary(?array $latestRunRow): array
     ];
 }
 
-function public_gir_progress_summary(?array $latestRunRow): array
+function public_gir_progress_summary(?array $latestRunRow, ?array $activeWorkflowRun = null): array
 {
     $projectTotals = db_one(
         'SELECT COUNT(*) AS total
@@ -1223,6 +1315,23 @@ function public_gir_progress_summary(?array $latestRunRow): array
     ];
     $active = ($latestRunRow && (string) ($latestRunRow['status'] ?? '') === 'started')
         || ($latestAnalysisAt !== '' && time() - (int) strtotime($latestAnalysisAt) <= 20 * 60);
+    $pending = null;
+    if (!$active && $remaining > 0 && $activeWorkflowRun) {
+        $workflowStartedAt = (string) (($activeWorkflowRun['started_at'] ?? '') ?: ($activeWorkflowRun['created_at'] ?? ''));
+        $workflowTs = $workflowStartedAt !== '' ? (int) strtotime($workflowStartedAt) : 0;
+        $latestKnownTs = max(
+            $latestAnalysisAt !== '' ? (int) strtotime($latestAnalysisAt) : 0,
+            !empty($latestRunRow['started_at']) ? (int) strtotime((string) $latestRunRow['started_at']) : 0
+        );
+        if ($workflowTs > 0 && $workflowTs > $latestKnownTs) {
+            $pending = [
+                'label' => 'GitHub 工作流已启动',
+                'summary' => '等待首批 GIR 结果回写',
+                'started_at' => $workflowStartedAt,
+            ];
+        }
+    }
+    $mode = $active ? 'running' : ($pending ? 'pending' : 'idle');
 
     $platforms = [];
     foreach ($platformRows as $row) {
@@ -1247,8 +1356,9 @@ function public_gir_progress_summary(?array $latestRunRow): array
         'percent' => $percent,
         'latest_at' => $latestAnalysisAt,
         'active' => $active,
-        'mode' => $active ? 'running' : 'idle',
-        'status_text' => $active ? '正在解读' : ($remaining > 0 ? '剩余待解读' : '等待新增'),
+        'mode' => $mode,
+        'status_text' => $active ? '正在解读' : ($pending ? '等待首批回写' : ($remaining > 0 ? '剩余待解读' : '等待新增')),
+        'pending' => $pending,
         'timing' => progress_timing($timingRow, $total, $analyzed),
         'next_schedule' => progress_next_schedule('gir', $remaining > 0),
         'history' => progress_run_history_stats('gir'),
@@ -1270,9 +1380,10 @@ function public_progress_summary(): array
          ORDER BY started_at DESC, id DESC
          LIMIT 1'
     );
+    $activeWorkflowRun = github_discover_active_run();
     $collection = public_collection_progress_summary($latestCollectionRunRow);
-    $gir = public_gir_progress_summary($latestGirRunRow);
-    $active = !empty($collection['active']) || !empty($gir['active']);
+    $gir = public_gir_progress_summary($latestGirRunRow, $activeWorkflowRun);
+    $active = !empty($collection['active']) || !empty($gir['active']) || (string) ($gir['mode'] ?? '') === 'pending';
 
     return [
         'generated_at' => date('Y-m-d H:i:s'),

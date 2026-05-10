@@ -611,6 +611,17 @@ h2 {
   box-shadow: 0 0 0 5px rgba(15, 118, 110, .12);
 }
 
+.progress-status.is-pending {
+  border-color: rgba(217, 119, 6, .22);
+  background: rgba(217, 119, 6, .1);
+  color: var(--gold-strong);
+}
+
+.progress-status.is-pending::before {
+  background: var(--gold);
+  box-shadow: 0 0 0 5px rgba(217, 119, 6, .12);
+}
+
 .progress-meter {
   overflow: hidden;
   border: 1px solid var(--line-soft);
@@ -756,6 +767,10 @@ h2 {
 
 .progress-card .progress-next {
   grid-template-columns: 1fr;
+}
+
+.progress-next-pending strong {
+  white-space: normal;
 }
 
 .progress-card .progress-countdown {
