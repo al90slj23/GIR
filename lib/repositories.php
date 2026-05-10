@@ -951,6 +951,104 @@ function run_recent_seconds(?array $latestRunRow): int
     return $latestRunTimestamp > 0 ? time() - $latestRunTimestamp : 999999;
 }
 
+function progress_next_schedule(string $kind): array
+{
+    $now = time();
+    $today = date('Y-m-d');
+    $daily = strtotime($today . ' 09:00:00');
+    if ($daily !== false && $daily <= $now) {
+        $daily = strtotime('+1 day', $daily);
+    }
+
+    $weekly = strtotime('monday this week 09:30:00');
+    if ($weekly !== false && $weekly <= $now) {
+        $weekly = strtotime('next monday 09:30:00');
+    }
+
+    $daily = $daily ?: strtotime('+1 day 09:00:00');
+    $weekly = $weekly ?: strtotime('next monday 09:30:00');
+    $useWeekly = $weekly !== false && $weekly < $daily;
+    $timestamp = $useWeekly ? (int) $weekly : (int) $daily;
+    $baseLabel = $useWeekly ? '周榜自动采集' : '日榜自动采集';
+    $label = $kind === 'gir' ? '随下一次自动采集触发 GIR 解读' : $baseLabel;
+    $seconds = max(0, $timestamp - $now);
+
+    return [
+        'label' => $label,
+        'at' => date('Y-m-d H:i:s', $timestamp),
+        'remaining_seconds' => $seconds,
+        'remaining_text' => progress_duration_text($seconds),
+    ];
+}
+
+function progress_run_history_stats(string $kind): array
+{
+    if ($kind === 'gir') {
+        $runStats = db_one(
+            'SELECT COUNT(*) AS total_runs,
+                    SUM(CASE WHEN run_type IN ("daily", "weekly") THEN 1 ELSE 0 END) AS auto_runs,
+                    SUM(CASE WHEN run_type = "manual" THEN 1 ELSE 0 END) AS manual_runs,
+                    SUM(total_analyzed) AS total_analyzed,
+                    SUM(CASE WHEN finished_at IS NOT NULL THEN TIMESTAMPDIFF(SECOND, started_at, finished_at) ELSE 0 END) AS total_seconds,
+                    MAX(COALESCE(finished_at, updated_at, started_at)) AS latest_finished_at
+             FROM runs
+             WHERE total_analyzed > 0'
+        );
+        $reportStats = db_one(
+            'SELECT COUNT(*) AS total_reports,
+                    COUNT(DISTINCT project_id) AS projects,
+                    MIN(created_at) AS first_at,
+                    MAX(created_at) AS latest_at
+             FROM project_reports
+             WHERE raw_rank_only = 0 AND one_sentence <> ""'
+        );
+
+        return [
+            'label' => '累计解读统计',
+            'stats' => [
+                ['label' => '累计解读次数', 'value' => number_format((int) ($reportStats['total_reports'] ?? 0))],
+                ['label' => '已解读项目', 'value' => number_format((int) ($reportStats['projects'] ?? 0))],
+                ['label' => '解读批次数', 'value' => number_format((int) ($runStats['total_runs'] ?? 0))],
+                ['label' => '自动周期批次', 'value' => number_format((int) ($runStats['auto_runs'] ?? 0))],
+                ['label' => '手动/搜索批次', 'value' => number_format((int) ($runStats['manual_runs'] ?? 0))],
+                ['label' => '累计解读耗时', 'value' => progress_duration_text((int) ($runStats['total_seconds'] ?? 0))],
+                ['label' => '最近解读', 'value' => (string) (($reportStats['latest_at'] ?? '') ?: '-')],
+            ],
+        ];
+    }
+
+    $runStats = db_one(
+        'SELECT COUNT(*) AS total_runs,
+                SUM(CASE WHEN run_type IN ("daily", "weekly") THEN 1 ELSE 0 END) AS auto_runs,
+                SUM(CASE WHEN run_type = "manual" THEN 1 ELSE 0 END) AS manual_runs,
+                SUM(total_found) AS total_found,
+                SUM(CASE WHEN finished_at IS NOT NULL THEN TIMESTAMPDIFF(SECOND, started_at, finished_at) ELSE 0 END) AS total_seconds,
+                MAX(COALESCE(finished_at, updated_at, started_at)) AS latest_finished_at
+         FROM runs'
+    );
+    $reportStats = db_one(
+        'SELECT COUNT(*) AS raw_reports,
+                COUNT(DISTINCT project_id) AS projects,
+                MIN(created_at) AS first_at,
+                MAX(created_at) AS latest_at
+         FROM project_reports
+         WHERE raw_rank_only = 1'
+    );
+
+    return [
+        'label' => '累计采集统计',
+        'stats' => [
+            ['label' => '累计候选记录', 'value' => number_format((int) ($reportStats['raw_reports'] ?? 0))],
+            ['label' => '去重项目数', 'value' => number_format((int) ($reportStats['projects'] ?? 0))],
+            ['label' => '采集批次数', 'value' => number_format((int) ($runStats['total_runs'] ?? 0))],
+            ['label' => '自动周期批次', 'value' => number_format((int) ($runStats['auto_runs'] ?? 0))],
+            ['label' => '手动/搜索批次', 'value' => number_format((int) ($runStats['manual_runs'] ?? 0))],
+            ['label' => '累计采集耗时', 'value' => progress_duration_text((int) ($runStats['total_seconds'] ?? 0))],
+            ['label' => '最近入库', 'value' => (string) (($reportStats['latest_at'] ?? '') ?: '-')],
+        ],
+    ];
+}
+
 function public_collection_progress_summary(?array $latestRunRow): array
 {
     $latestDateRow = db_one("SELECT MAX(report_date) AS report_date FROM project_reports WHERE period_type = 'daily' AND raw_rank_only = 1");
@@ -999,8 +1097,7 @@ function public_collection_progress_summary(?array $latestRunRow): array
     $target = max((int) ($latestRunRow['total_found'] ?? 0), $rawRank);
     $percent = $target > 0 ? round(min(100, ($rawRank / $target) * 100), 1) : 0;
     $active = ($latestRunRow && (string) ($latestRunRow['status'] ?? '') === 'started')
-        || ($latestAt !== '' && time() - (int) strtotime($latestAt) <= 20 * 60)
-        || (run_recent_seconds($latestRunRow) <= 20 * 60);
+        || ($percent < 100 && $latestAt !== '' && time() - (int) strtotime($latestAt) <= 20 * 60);
     $timingRow = [
         'started_at' => (string) ($latestRunRow['started_at'] ?? ($latestAt ?: '')),
         'first_analysis_at' => (string) ($latestRunRow['started_at'] ?? ($latestAt ?: '')),
@@ -1011,13 +1108,16 @@ function public_collection_progress_summary(?array $latestRunRow): array
         'label' => '平台采集入库',
         'report_date' => $reportDate,
         'active' => $active,
-        'status_text' => $active ? '正在采集' : '最近更新',
+        'mode' => $active ? 'running' : 'idle',
+        'status_text' => $active ? '正在采集' : '等待下一轮',
         'raw_rank' => $rawRank,
         'projects' => $projectTotal,
         'target' => $target,
         'percent' => $percent,
         'latest_at' => $latestAt,
         'timing' => progress_timing($timingRow, $target, $rawRank),
+        'next_schedule' => progress_next_schedule('collection'),
+        'history' => progress_run_history_stats('collection'),
         'platforms' => $platforms,
     ];
 }
@@ -1093,8 +1193,11 @@ function public_gir_progress_summary(?array $latestRunRow): array
         'percent' => $percent,
         'latest_at' => $latestAnalysisAt,
         'active' => $active,
-        'status_text' => $active ? '正在解读' : '最近更新',
+        'mode' => $active ? 'running' : 'idle',
+        'status_text' => $active ? '正在解读' : '等待下一轮',
         'timing' => progress_timing($timingRow, $total, $analyzed),
+        'next_schedule' => progress_next_schedule('gir'),
+        'history' => progress_run_history_stats('gir'),
         'platforms' => $platforms,
     ];
 }
@@ -1104,7 +1207,7 @@ function public_progress_summary(): array
     $latestRunRow = db_one('SELECT * FROM runs ORDER BY started_at DESC, id DESC LIMIT 1');
     $collection = public_collection_progress_summary($latestRunRow);
     $gir = public_gir_progress_summary($latestRunRow);
-    $active = !empty($collection['active']) || !empty($gir['active']) || run_recent_seconds($latestRunRow) <= 20 * 60;
+    $active = !empty($collection['active']) || !empty($gir['active']);
 
     return [
         'generated_at' => date('Y-m-d H:i:s'),

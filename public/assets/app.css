@@ -639,6 +639,14 @@ h2 {
   font-weight: 780;
 }
 
+.progress-section-title {
+  margin: 14px 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 760;
+  letter-spacing: .06em;
+}
+
 .progress-timing {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -684,6 +692,68 @@ h2 {
   font-size: 12px;
   font-style: normal;
   line-height: 1.3;
+}
+
+.progress-next {
+  display: grid;
+  align-items: center;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface-chip);
+  padding: 12px;
+  margin-top: 14px;
+}
+
+.progress-next .progress-section-title {
+  margin-top: 0;
+}
+
+.progress-next strong,
+.progress-next span,
+.progress-stat-grid strong,
+.progress-stat-grid em {
+  display: block;
+}
+
+.progress-next strong,
+.progress-stat-grid strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progress-next span,
+.progress-stat-grid em {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.3;
+}
+
+.progress-countdown {
+  min-width: 94px;
+  text-align: right;
+}
+
+.progress-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.progress-stat-grid span {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface-chip);
+  padding: 11px 12px;
+  min-width: 0;
 }
 
 .progress-platforms {
