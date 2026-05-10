@@ -16,7 +16,7 @@ render_header('数据统计');
 <div class="page-head">
     <div>
         <h1>数据统计</h1>
-        <div class="muted">查看项目库规模、DeepSeek 解读量、各来源平台和最近采集运行情况。</div>
+        <div class="muted">查看项目库规模、GIR 解读量、各来源平台和最近采集运行情况。</div>
     </div>
     <a class="button secondary" href="/admin/index.php">返回后台</a>
 </div>
@@ -30,12 +30,12 @@ render_header('数据统计');
     <div class="stat-card">
         <div class="stat-label">总报告记录</div>
         <div class="stat-value"><?= stat_number($stats['reports']['total']) ?></div>
-        <div class="muted">原始排行 + DeepSeek 解读</div>
+        <div class="muted">原始排行 + GIR 解读</div>
     </div>
     <div class="stat-card">
-        <div class="stat-label">DeepSeek 解读</div>
+        <div class="stat-label">GIR 解读</div>
         <div class="stat-value"><?= stat_number($stats['reports']['analyzed']) ?></div>
-        <div class="muted">可在前台中文解读中展示</div>
+        <div class="muted">可在前台 GIR 解读中展示</div>
     </div>
     <div class="stat-card">
         <div class="stat-label">原始排行</div>
@@ -52,7 +52,7 @@ render_header('数据统计');
             <th>平台</th>
             <th>项目数</th>
             <th>总记录</th>
-            <th>DeepSeek 解读</th>
+            <th>GIR 解读</th>
             <th>原始排行</th>
         </tr>
         </thead>
@@ -78,7 +78,7 @@ render_header('数据统计');
             <th>日期</th>
             <th>项目数</th>
             <th>总记录</th>
-            <th>DeepSeek 解读</th>
+            <th>GIR 解读</th>
             <th>原始排行</th>
         </tr>
         </thead>
@@ -104,7 +104,7 @@ render_header('数据统计');
             <th>平台</th>
             <th>分类</th>
             <th>总记录</th>
-            <th>DeepSeek 解读</th>
+            <th>GIR 解读</th>
             <th>原始排行</th>
         </tr>
         </thead>

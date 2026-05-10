@@ -43,7 +43,7 @@ $latestReport = $reports ? $reports[0] : null;
 <section class="panel">
     <div class="section-head">
         <div>
-            <h2>最新解读</h2>
+            <h2>GIR 解读</h2>
             <div class="muted">
                 <?= h(ranking_platform_label((string) $latestReport['source_platform'])) ?>
                 · <?= h(ranking_tag_label((string) $latestReport['source_tag'])) ?>
@@ -70,11 +70,11 @@ $latestReport = $reports ? $reports[0] : null;
     <div class="section-head">
         <div>
             <h2>解读历史</h2>
-            <div class="muted">同一个项目每次命中榜单都会保留一条新的 DeepSeek 解读。</div>
+            <div class="muted">同一个项目每次命中榜单都会保留一条新的 GIR 解读。</div>
         </div>
     </div>
     <?php if (!$reports): ?>
-        <div class="empty">这个项目还没有 DeepSeek 解读。</div>
+        <div class="empty">这个项目还没有 GIR 解读，暂时先看项目官方简介。</div>
     <?php else: ?>
         <div class="timeline">
             <?php foreach ($reports as $index => $report): ?>

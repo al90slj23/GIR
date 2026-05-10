@@ -82,6 +82,59 @@ CREATE TABLE IF NOT EXISTS runs (
   KEY idx_started_at (started_at)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
 
+CREATE TABLE IF NOT EXISTS project_readmes (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  project_id INT UNSIGNED NOT NULL,
+  readme_path VARCHAR(255) NOT NULL DEFAULT '',
+  language_code VARCHAR(32) NOT NULL DEFAULT '',
+  source_url VARCHAR(500) NOT NULL DEFAULT '',
+  is_translated TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  source_language_code VARCHAR(32) NOT NULL DEFAULT '',
+  content_md MEDIUMTEXT,
+  fetched_at DATETIME NOT NULL,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uniq_project_readme (project_id, readme_path, language_code, is_translated),
+  KEY idx_project_readmes_project (project_id),
+  KEY idx_project_readmes_language (language_code, is_translated)
+) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+
+CREATE TABLE IF NOT EXISTS gir_analysis_queue (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  project_id INT UNSIGNED NOT NULL,
+  status VARCHAR(24) NOT NULL DEFAULT 'pending',
+  reason VARCHAR(64) NOT NULL DEFAULT 'missing_analysis',
+  priority INT UNSIGNED NOT NULL DEFAULT 100,
+  last_analysis_at DATETIME DEFAULT NULL,
+  next_run_at DATETIME DEFAULT NULL,
+  attempts INT UNSIGNED NOT NULL DEFAULT 0,
+  error_message TEXT,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uniq_gir_analysis_project (project_id),
+  KEY idx_gir_analysis_queue_status (status, priority, next_run_at),
+  KEY idx_gir_analysis_queue_project (project_id)
+) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+
+CREATE TABLE IF NOT EXISTS platform_fetch_state (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  platform VARCHAR(64) NOT NULL,
+  source_tag VARCHAR(128) NOT NULL DEFAULT '',
+  period_type VARCHAR(16) NOT NULL DEFAULT 'daily',
+  interval_minutes INT UNSIGNED NOT NULL DEFAULT 1440,
+  last_fetched_at DATETIME DEFAULT NULL,
+  next_fetch_at DATETIME DEFAULT NULL,
+  last_status VARCHAR(24) NOT NULL DEFAULT '',
+  last_error TEXT,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uniq_platform_fetch_state (platform, source_tag, period_type),
+  KEY idx_platform_fetch_due (next_fetch_at, platform)
+) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+
 CREATE TABLE IF NOT EXISTS app_settings (
   setting_key VARCHAR(64) NOT NULL,
   setting_value TEXT,
@@ -127,7 +180,7 @@ INSERT IGNORE INTO app_settings (setting_key, setting_value, description, update
 VALUES ('discover_weekly_enabled', '1', '是否启用周榜自动采集', NOW());
 
 INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
-VALUES ('discover_analyze_all', '1', '是否让 DeepSeek 处理全部候选项目', NOW());
+VALUES ('discover_analyze_all', '1', '是否让 GIR 解读处理全部候选项目', NOW());
 
 INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
 VALUES ('discover_max_projects', '3', '每次最多分析项目数', NOW());
@@ -160,10 +213,10 @@ INSERT IGNORE INTO app_settings (setting_key, setting_value, description, update
 VALUES ('discover_extra_queries', '', '额外 GitHub 搜索语句，每行一条，可使用 {since}', NOW());
 
 INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
-VALUES ('deepseek_system_prompt', '你是一个帮助站长发现 GitHub 新项目的技术分析员。\n你的目标是把项目讲成人能快速理解的中文：它做什么、为什么值得关注、适合谁、怎么用、有什么可借鉴点。\n不要把本站运行环境或某个特定技术栈当作通用评价标准；除非输入明确要求，否则不要把部署条件作为主要结论。\n你必须用中文输出严格 JSON，不要 Markdown，不要解释。\n评分为 1 到 10 的整数。\nplay_score 衡量项目是否有趣、是否值得点开体验、是否能带来灵感。\nuseful_score 衡量项目是否解决真实问题、是否有明确使用价值。\nmaturity_score 衡量项目成熟度，综合 Stars、Forks、最近更新、文档完整度和社区活跃度。\ndifficulty 衡量理解、部署、改造或复刻成本，只能输出 低、中、高。', 'DeepSeek 系统提示词', NOW());
+VALUES ('deepseek_system_prompt', '你是一个帮助站长发现 GitHub 新项目的技术分析员。\n你的目标是把项目讲成人能快速理解的中文：它做什么、为什么值得关注、适合谁、怎么用、有什么可借鉴点。\n不要把本站运行环境或某个特定技术栈当作通用评价标准；除非输入明确要求，否则不要把部署条件作为主要结论。\n你必须用中文输出严格 JSON，不要 Markdown，不要解释。\n评分为 1 到 10 的整数。\nplay_score 衡量项目是否有趣、是否值得点开体验、是否能带来灵感。\nuseful_score 衡量项目是否解决真实问题、是否有明确使用价值。\nmaturity_score 衡量项目成熟度，综合 Stars、Forks、最近更新、文档完整度和社区活跃度。\ndifficulty 衡量理解、部署、改造或复刻成本，只能输出 低、中、高。', 'GIR 解读系统提示词', NOW());
 
 INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
-VALUES ('deepseek_task_prompt', '为这次榜单命中生成一条新的中文解说。即使历史里已经分析过同一个项目，也不要复用旧文案；请结合最近几次解说，判断这次是否有新功能、热度变化、定位变化或值得重新关注的原因。表达要说人话，避免空泛夸奖，重点说明：项目一句话用途、解决的真实问题、为什么上榜或变热、适合谁用、上手方式或可借鉴点、主要风险。不要默认围绕部署条件评价项目，也不要因为项目依赖较多或运行门槛较高就直接给出“暂不关注”；只有当部署门槛会明显影响目标用户采用时，才在风险里简短说明。', 'DeepSeek 解读任务提示词', NOW());
+VALUES ('deepseek_task_prompt', '为这次榜单命中生成一条新的中文解说。即使历史里已经分析过同一个项目，也不要复用旧文案；请结合最近几次解说，判断这次是否有新功能、热度变化、定位变化或值得重新关注的原因。表达要说人话，避免空泛夸奖，重点说明：项目一句话用途、解决的真实问题、为什么上榜或变热、适合谁用、上手方式或可借鉴点、主要风险。不要默认围绕部署条件评价项目，也不要因为项目依赖较多或运行门槛较高就直接给出“暂不关注”；只有当部署门槛会明显影响目标用户采用时，才在风险里简短说明。', 'GIR 解读任务提示词', NOW());
 
 INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
 VALUES ('discover_platforms', 'github_trending,github_search,ossinsight,trendshift,reporank,gitrepotrend', '旧配置项：排行平台已固定在代码中', NOW());

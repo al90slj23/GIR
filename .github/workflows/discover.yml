@@ -26,6 +26,10 @@ on:
         description: "GitHub Search 本次最多跑多少条搜索规则，留空为全部"
         required: false
         default: ""
+      extra_query:
+        description: "动态 GitHub Search 查询；填写后只运行该搜索并入库解读"
+        required: false
+        default: ""
       backfill_existing:
         description: "true 时不抓新榜单，改为重解读数据库里已有全部项目"
         required: false
@@ -70,6 +74,7 @@ jobs:
           BACKFILL_OFFSET: ${{ github.event.inputs.backfill_offset || '0' }}
           BACKFILL_LIMIT: ${{ github.event.inputs.backfill_limit || '' }}
           DISCOVER_PLATFORMS: ${{ github.event.inputs.platforms || '' }}
+          DISCOVER_EXTRA_QUERY: ${{ github.event.inputs.extra_query || '' }}
           GITHUB_SEARCH_SPEC_OFFSET: ${{ github.event.inputs.search_offset || '0' }}
           GITHUB_SEARCH_SPEC_LIMIT: ${{ github.event.inputs.search_limit || '' }}
           REPORT_TIMEZONE: "Asia/Shanghai"

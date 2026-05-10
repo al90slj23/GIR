@@ -447,6 +447,36 @@ h2 {
   margin: -4px 0 22px;
 }
 
+.search-entry-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-card);
+  padding: 16px;
+  margin: 0 0 14px;
+  box-shadow: var(--shadow-sm);
+}
+
+.search-entry-panel h2 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.search-entry-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: min(420px, 100%);
+}
+
+.search-entry-form input[type="search"] {
+  min-width: 0;
+  width: 100%;
+}
+
 .progress-panel::before {
   position: absolute;
   inset: 0 0 auto;
@@ -1207,6 +1237,12 @@ select {
 
   .progress-panel-top {
     align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .search-entry-panel,
+  .search-entry-form {
+    align-items: stretch;
     flex-direction: column;
   }
 

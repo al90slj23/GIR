@@ -45,6 +45,7 @@ jobs:
 
           upload public/index.php index.php
           upload public/weekly.php weekly.php
+          upload public/search.php search.php
           upload public/project.php project.php
           upload public/rss.php rss.php
           upload public/_layout.php public/_layout.php

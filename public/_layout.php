@@ -222,8 +222,11 @@ function render_github_project_card(array $row, int $rank): void
         $summary = trim((string) ($row['description'] ?? ''));
     }
     if ($summary === '') {
-        $summary = '等待 DeepSeek 生成中文解读。';
+        $summary = '等待 GIR 解读，暂时先显示项目基础信息。';
     }
+    $hasGirAnalysis = trim((string) ($row['analysis_one_sentence'] ?? '')) !== ''
+        || trim((string) ($row['analysis_summary_zh'] ?? '')) !== ''
+        || trim((string) ($row['analysis_change_note'] ?? '')) !== '';
     $projectType = trim((string) ($row['analysis_project_type'] ?? ''));
     if ($projectType === '') {
         $projectType = trim((string) ($row['project_type'] ?? ''));
@@ -236,17 +239,18 @@ function render_github_project_card(array $row, int $rank): void
             <h2 class="project-title"><a href="/project.php?id=<?= (int) $row['project_id'] ?>"><?= h($row['full_name']) ?></a></h2>
             <div class="muted"><?= h($row['description'] ?: $row['one_sentence']) ?></div>
         </div>
-        <span class="badge muted"><?= h($row['language'] ?: '未知语言') ?></span>
+        <span class="<?= $hasGirAnalysis ? 'badge green' : 'badge muted' ?>"><?= $hasGirAnalysis ? 'GIR 解读' : '待 GIR 解读' ?></span>
     </div>
     <div class="metrics">
         <span class="metric">Stars <?= (int) $row['stars'] ?></span>
         <span class="metric">Forks <?= (int) $row['forks'] ?></span>
         <span class="metric">最近推送 <?= h($row['pushed_at'] ?: '-') ?></span>
+        <span class="metric"><?= h($row['language'] ?: '未知语言') ?></span>
         <span class="metric"><?= h($projectType ?: '未分类') ?></span>
     </div>
     <p class="desc"><?= h($summary) ?></p>
     <div class="muted">
-        <a href="/project.php?id=<?= (int) $row['project_id'] ?>">查看中文解读</a>
+        <a href="/project.php?id=<?= (int) $row['project_id'] ?>">查看 GIR 解读</a>
         · <a href="<?= h($row['html_url']) ?>" target="_blank" rel="noreferrer">GitHub</a>
         · 报告日期 <?= h($row['report_date']) ?>
     </div>
@@ -266,6 +270,9 @@ function ranking_query_params(string $platform, string $tag, string $view, array
         $params['start_date'] = (string) ($dateRange['start'] ?? '');
         $params['end_date'] = (string) ($dateRange['end'] ?? '');
     }
+    if ($view === 'gir') {
+        unset($params['view']);
+    }
     return array_filter($params, 'strlen');
 }
 
@@ -275,18 +282,6 @@ function ranking_count_label(int $current, int $full): string
         return number_format($current) . ' / ' . number_format($full);
     }
     return number_format($current);
-}
-
-function render_rank_tabs(string $basePath, string $activeView, array $dateRange, string $platform = '', string $tag = ''): void
-{
-    $githubQuery = http_build_query(ranking_query_params($platform, $tag, 'github', $dateRange));
-    $deepseekQuery = http_build_query(ranking_query_params($platform, $tag, 'deepseek', $dateRange));
-    ?>
-<div class="tabs">
-    <a class="<?= $activeView === 'github' ? 'active' : '' ?>" href="<?= h($basePath) ?>?<?= h($githubQuery) ?>">原版排行</a>
-    <a class="<?= $activeView === 'deepseek' ? 'active' : '' ?>" href="<?= h($basePath) ?>?<?= h($deepseekQuery) ?>">DeepSeek 中文解读</a>
-</div>
-<?php
 }
 
 function render_platform_tabs(string $basePath, array $platforms, string $activePlatform, string $activeView, array $dateRange, string $tag): void
@@ -315,6 +310,22 @@ function render_platform_tabs(string $basePath, array $platforms, string $active
         </a>
     <?php endforeach; ?>
 </div>
+<?php
+}
+
+function render_github_search_entry(string $defaultQuery = ''): void
+{
+    ?>
+<section class="search-entry-panel">
+    <div>
+        <h2>GitHub 搜索</h2>
+        <div class="muted">搜索入口已从主排行中拆出，用于按关键词查看项目库结果；后续抓取会进入独立搜索队列。</div>
+    </div>
+    <form class="search-entry-form" action="/search.php" method="get">
+        <input type="search" name="q" value="<?= h($defaultQuery) ?>" placeholder="搜索项目、主题、语言或用途">
+        <button class="button" type="submit">搜索</button>
+    </form>
+</section>
 <?php
 }
 
@@ -392,7 +403,7 @@ function render_deepseek_progress_panel(): void
 <section class="progress-panel" data-progress-panel>
     <div class="progress-panel-top">
         <div>
-            <div class="progress-kicker">DeepSeek 解读进度</div>
+            <div class="progress-kicker">GIR 解读进度</div>
             <h2 data-progress-title><?= h($focus['label']) ?> · <?= h($percentText) ?>%</h2>
         </div>
         <span class="progress-status <?= $active ? 'is-active' : 'is-idle' ?>" data-progress-status><?= $active ? '正在更新' : '最近更新' ?></span>

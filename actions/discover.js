@@ -27,6 +27,7 @@ const env = {
   ingestToken: process.env.APP_INGEST_TOKEN || "",
   configUrl: process.env.APP_CONFIG_URL || "",
   platformOverride: process.env.DISCOVER_PLATFORMS || "",
+  githubSearchQuery: process.env.DISCOVER_EXTRA_QUERY || "",
 };
 
 for (const [key, value] of Object.entries(env)) {
@@ -47,10 +48,34 @@ const defaultConfig = {
   min_stars_agent: 30,
   topics: ["ai", "llm", "agent", "php"],
   extra_queries: [],
-  platforms: ["github_trending", "github_search", "ossinsight", "trendshift", "reporank", "gitrepotrend"],
+  include_default_search_specs: true,
+  platforms: ["github_trending", "ossinsight", "trendshift", "reporank", "gitrepotrend"],
   deepseek_system_prompt: defaultSystemPrompt(),
   deepseek_task_prompt: defaultTaskPrompt(),
 };
+
+const trendshiftFallbackTopics = [
+  "ai-agent",
+  "ai-coding-assistant",
+  "ai-skills",
+  "self-hosted",
+  "curated-list",
+  "ai-workflow",
+  "workflow-automation",
+  "mcp",
+  "document-processing",
+  "rag",
+  "web-scraping",
+  "ai-infrastructure",
+  "local-llm",
+  "fintech",
+  "programming-examples",
+  "data-visualization",
+  "developer-tools",
+  "security",
+  "database",
+  "game-development",
+];
 
 const seedTopics = [
   "ai",
@@ -221,6 +246,7 @@ async function loadDiscoverConfig() {
       min_stars_agent: clampNumber(config.min_stars_agent, defaultConfig.min_stars_agent, 0, 1000000),
       topics: normalizeList(config.topics).length ? normalizeList(config.topics) : defaultConfig.topics,
       extra_queries: normalizeList(config.extra_queries),
+      include_default_search_specs: config.include_default_search_specs !== false,
       platforms,
       deepseek_system_prompt: String(config.deepseek_system_prompt || defaultConfig.deepseek_system_prompt).trim() || defaultConfig.deepseek_system_prompt,
       deepseek_task_prompt: String(config.deepseek_task_prompt || defaultConfig.deepseek_task_prompt).trim() || defaultConfig.deepseek_task_prompt,
@@ -249,6 +275,20 @@ function applySeedConfig(config) {
     min_stars_agent: 0,
     topics: seedTopics,
     extra_queries: [...new Set([...config.extra_queries, ...seedExtraQueries])],
+    include_default_search_specs: true,
+  };
+}
+
+function applyDynamicSearchConfig(config) {
+  const query = String(env.githubSearchQuery || "").trim();
+  if (!query) return config;
+  return {
+    ...config,
+    analyze_all: true,
+    platforms: ["github_search"],
+    topics: [],
+    extra_queries: [query],
+    include_default_search_specs: false,
   };
 }
 
@@ -416,8 +456,50 @@ async function ossInsightBucket(config) {
 }
 
 async function trendshiftBucket(config) {
-  const text = await fetchText("https://trendshift.io/");
-  return hydrateCandidates(uniqueFullNamesFromText(text), "trendshift", periodType === "weekly" ? "weekly" : "daily", config.per_page);
+  const buckets = [];
+  const homeText = await fetchText("https://trendshift.io/");
+  const homeBucket = await hydrateCandidates(uniqueFullNamesFromText(homeText), "trendshift", periodType === "weekly" ? "weekly" : "daily", config.per_page);
+  if (homeBucket.length) buckets.push(homeBucket);
+
+  const extraPages = [
+    ["github-trending", "https://trendshift.io/github-trending-repositories"],
+    ["repository-engagements", "https://trendshift.io/repository-engagements"],
+  ];
+  for (const [tag, url] of extraPages) {
+    try {
+      if (requestDelayMs > 0) await sleep(requestDelayMs);
+      const text = await fetchText(url);
+      const bucket = await hydrateCandidates(uniqueFullNamesFromText(text), "trendshift", tag, config.per_page);
+      if (bucket.length) buckets.push(bucket);
+    } catch (error) {
+      console.warn(`Trendshift page failed ${tag}: ${error.message}`);
+    }
+  }
+
+  let topics = [];
+  try {
+    if (requestDelayMs > 0) await sleep(requestDelayMs);
+    const topicIndex = await fetchText("https://trendshift.io/topics");
+    topics = Array.from(topicIndex.matchAll(/href=["']\/topics\/([a-z0-9-]+)["']/gi))
+      .map((match) => match[1])
+      .filter((slug) => slug && slug !== "topics");
+  } catch (error) {
+    console.warn(`Trendshift topics index failed: ${error.message}; using fallback topics`);
+  }
+  topics = [...new Set([...topics, ...trendshiftFallbackTopics])].slice(0, 60);
+
+  for (const topic of topics) {
+    try {
+      if (requestDelayMs > 0) await sleep(requestDelayMs);
+      const text = await fetchText(`https://trendshift.io/topics/${encodeURIComponent(topic)}`);
+      const bucket = await hydrateCandidates(uniqueFullNamesFromText(text), "trendshift", topic, config.per_page);
+      if (bucket.length) buckets.push(bucket);
+    } catch (error) {
+      console.warn(`Trendshift topic failed ${topic}: ${error.message}`);
+    }
+  }
+
+  return buckets;
 }
 
 async function repoRankBucket(config) {
@@ -481,19 +563,23 @@ async function gitRepoTrendBucket(config) {
 function buildQuerySpecs(config) {
   const recentDays = periodType === "weekly" ? config.recent_days_weekly : config.recent_days_daily;
   const since = new Date(Date.now() - recentDays * 86400000).toISOString().slice(0, 10);
-  const specs = [
-    { platform: "github", tag: "综合", query: `stars:>${config.min_stars_general} pushed:>${since}` },
-    { platform: "github", tag: "新项目", query: `created:>${since} stars:>${config.min_stars_created}` },
-  ];
-  for (const topic of config.topics) {
-    const minStars = topic.toLowerCase() === "agent" ? config.min_stars_agent : config.min_stars_topic;
-    specs.push({ platform: "github", tag: topic, query: `topic:${topic} pushed:>${since} stars:>${minStars}` });
+  const specs = [];
+  if (config.include_default_search_specs !== false) {
+    specs.push(
+      { platform: "github_search", tag: "综合", query: `stars:>${config.min_stars_general} pushed:>${since}` },
+      { platform: "github_search", tag: "新项目", query: `created:>${since} stars:>${config.min_stars_created}` },
+    );
+    for (const topic of config.topics) {
+      const minStars = topic.toLowerCase() === "agent" ? config.min_stars_agent : config.min_stars_topic;
+      specs.push({ platform: "github_search", tag: topic, query: `topic:${topic} pushed:>${since} stars:>${minStars}` });
+    }
   }
   for (const [index, query] of config.extra_queries.entries()) {
+    const resolvedQuery = query.replaceAll("{since}", since);
     specs.push({
-      platform: "github",
-      tag: `自定义${index + 1}`,
-      query: query.replaceAll("{since}", since),
+      platform: "github_search",
+      tag: config.include_default_search_specs === false ? `搜索:${resolvedQuery.slice(0, 52)}` : `自定义${index + 1}`,
+      query: resolvedQuery,
     });
   }
   const seen = new Set();
@@ -993,7 +1079,7 @@ function projectPayload(repo, analysis) {
 }
 
 async function main() {
-  const config = applySeedConfig(applyRuntimeOverrides(await loadDiscoverConfig()));
+  const config = applyDynamicSearchConfig(applySeedConfig(applyRuntimeOverrides(await loadDiscoverConfig())));
   console.log(`Discover config: mode=${backfillMode ? "backfill" : (seedMode ? "seed" : "normal")}, max=${config.max_projects}, per_page=${config.per_page}, platforms=${config.platforms.join(",")}, topics=${config.topics.join(",")}, extra_queries=${config.extra_queries.length}, report_date=${today}`);
   if (backfillMode) {
     await runBackfill(config);

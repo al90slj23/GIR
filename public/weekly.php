@@ -6,14 +6,20 @@ $range = isset($_GET['range']) ? (string) $_GET['range'] : '7d';
 $startDate = isset($_GET['start_date']) ? (string) $_GET['start_date'] : '';
 $endDate = isset($_GET['end_date']) ? (string) $_GET['end_date'] : '';
 $dateRange = report_date_range($range, $startDate, $endDate);
-$view = isset($_GET['view']) && $_GET['view'] === 'deepseek' ? 'deepseek' : 'github';
+$view = 'gir';
 $platforms = available_ranking_platforms_by_range('weekly', $dateRange);
 $platform = isset($_GET['platform']) ? preg_replace('/[^a-z0-9_\-]/i', '', (string) $_GET['platform']) : '';
 if ($platform === '' && $platforms) {
     $platform = (string) $platforms[0]['source_platform'];
 }
 if ($platform === '') {
-    $platform = 'github';
+    $platform = 'github_trending';
+}
+$platformValues = array_map(static function (array $row): string {
+    return (string) ($row['source_platform'] ?? '');
+}, $platforms);
+if ($platforms && !in_array($platform, $platformValues, true)) {
+    $platform = (string) $platforms[0]['source_platform'];
 }
 $tag = isset($_GET['tag']) ? truncate_text((string) $_GET['tag'], 64) : '';
 $tags = available_ranking_tags_by_range('weekly', $platform, $dateRange);
@@ -33,9 +39,7 @@ foreach ($platforms as $index => $row) {
         break;
     }
 }
-$reports = $view === 'github'
-    ? github_rank_reports_by_range('weekly', $dateRange, 40, $platform, $tag)
-    : reports_by_range('weekly', $dateRange, 40, $platform, $tag);
+$reports = github_rank_reports_by_range('weekly', $dateRange, 40, $platform, $tag);
 $pageTitle = app_setting('weekly_title', '本周 GitHub 灵感榜');
 
 render_header($pageTitle);
@@ -48,16 +52,16 @@ render_header($pageTitle);
 </div>
 
 <?php render_platform_tabs('/weekly.php', $platforms, $platform, $view, $dateRange, $tag); ?>
+<?php render_github_search_entry(); ?>
 <?php render_tag_tabs('/weekly.php', $tags, $tag, $platform, $view, $dateRange, $activePlatformRangeTotal, $activePlatformFullTotal); ?>
 <?php render_date_range_filter('/weekly.php', $platform, $tag, $view, $dateRange); ?>
-<?php render_rank_tabs('/weekly.php', $view, $dateRange, $platform, $tag); ?>
 
 <?php if (!$reports): ?>
     <div class="empty"><?= h(app_setting('weekly_empty_text', '还没有周榜数据。')) ?></div>
 <?php else: ?>
     <div class="grid">
         <?php foreach ($reports as $index => $row): ?>
-            <?php $view === 'github' ? render_github_project_card($row, $index + 1) : render_project_card($row); ?>
+            <?php render_github_project_card($row, $index + 1); ?>
         <?php endforeach; ?>
     </div>
 <?php endif; ?>

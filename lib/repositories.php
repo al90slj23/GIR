@@ -6,7 +6,7 @@ function ranking_platform_labels(): array
     return [
         'github' => 'GitHub 搜索',
         'github_trending' => 'GitHub 官方趋势',
-        'github_search' => 'GitHub 搜索榜',
+        'github_search' => 'GitHub 搜索',
         'ossinsight' => 'OSSInsight 趋势',
         'trendshift' => 'Trendshift 趋势',
         'reporank' => 'RepoRank 排行',
@@ -292,15 +292,16 @@ function raw_rank_analysis_join_sql(): string
                  SELECT rr.id
                  FROM project_reports rr
                  WHERE rr.project_id = r.project_id
-                   AND rr.period_type = r.period_type
-                   AND rr.report_date = r.report_date
-                   AND rr.source_platform = r.source_platform
-                   AND rr.source_tag = r.source_tag
                    AND rr.raw_rank_only = 0
                    AND rr.one_sentence <> ""
-                 ORDER BY rr.id DESC
+                 ORDER BY rr.report_date DESC, rr.id DESC
                  LIMIT 1
              )';
+}
+
+function ranking_primary_platform_filter_sql(string $alias = 'r'): string
+{
+    return ' AND ' . $alias . ".source_platform NOT IN ('github', 'github_search')";
 }
 
 function available_ranking_platforms(string $periodType, string $date = ''): array
@@ -310,7 +311,7 @@ function available_ranking_platforms(string $periodType, string $date = ''): arr
         'SELECT r.source_platform, COUNT(*) AS total
          FROM project_reports r
          INNER JOIN projects p ON p.id = r.project_id
-         WHERE r.period_type = ? AND p.is_hidden = 0' . raw_rank_report_sql() . $dateFilter['sql'] . '
+         WHERE r.period_type = ? AND p.is_hidden = 0' . raw_rank_report_sql() . ranking_primary_platform_filter_sql('r') . $dateFilter['sql'] . '
          GROUP BY r.source_platform
          ORDER BY ' . ranking_platform_order_sql('source_platform') . ', total DESC, r.source_platform ASC',
         array_merge([$periodType], $dateFilter['params'])
@@ -325,7 +326,7 @@ function available_ranking_platforms_by_range(string $periodType, array $dateRan
         'SELECT r.source_platform, COUNT(*) AS total
          FROM project_reports r
          INNER JOIN projects p ON p.id = r.project_id
-         WHERE r.period_type = ? AND p.is_hidden = 0' . raw_rank_report_sql() . $dateFilter['sql'] . '
+         WHERE r.period_type = ? AND p.is_hidden = 0' . raw_rank_report_sql() . ranking_primary_platform_filter_sql('r') . $dateFilter['sql'] . '
          GROUP BY r.source_platform
          ORDER BY ' . ranking_platform_order_sql('source_platform') . ', total DESC, r.source_platform ASC',
         array_merge([$periodType], $dateFilter['params'])
@@ -339,7 +340,7 @@ function all_ranking_platform_totals(string $periodType): array
         'SELECT r.source_platform, COUNT(*) AS total
          FROM project_reports r
          INNER JOIN projects p ON p.id = r.project_id
-         WHERE r.period_type = ? AND p.is_hidden = 0' . raw_rank_report_sql() . '
+         WHERE r.period_type = ? AND p.is_hidden = 0' . raw_rank_report_sql() . ranking_primary_platform_filter_sql('r') . '
          GROUP BY r.source_platform
          ORDER BY ' . ranking_platform_order_sql('source_platform') . ', total DESC, r.source_platform ASC',
         [$periodType]
@@ -545,6 +546,45 @@ function project_with_reports(int $id): ?array
         [$id]
     );
     return $project;
+}
+
+function search_projects(string $query, int $limit = 30): array
+{
+    $query = trim($query);
+    if ($query === '') {
+        return [];
+    }
+
+    $like = '%' . $query . '%';
+    return db_all(
+        'SELECT p.id AS project_id, p.name, p.full_name, p.html_url, p.description, p.stars, p.forks, p.language, p.topics, p.pushed_at,
+                ar.one_sentence AS analysis_one_sentence,
+                ar.summary_zh AS analysis_summary_zh,
+                ar.change_note AS analysis_change_note,
+                ar.project_type AS analysis_project_type,
+                ar.report_date AS analysis_report_date,
+                ar.source_platform AS analysis_source_platform,
+                ar.source_tag AS analysis_source_tag
+         FROM projects p
+         LEFT JOIN project_reports ar ON ar.id = (
+             SELECT rr.id
+             FROM project_reports rr
+             WHERE rr.project_id = p.id
+               AND rr.raw_rank_only = 0
+               AND rr.one_sentence <> ""
+             ORDER BY rr.report_date DESC, rr.id DESC
+             LIMIT 1
+         )
+         WHERE p.is_hidden = 0
+           AND (p.full_name LIKE ? OR p.name LIKE ? OR p.description LIKE ? OR p.language LIKE ? OR p.topics LIKE ?)
+         ORDER BY
+           CASE WHEN p.full_name LIKE ? THEN 0 ELSE 1 END,
+           p.stars DESC,
+           p.forks DESC,
+           p.updated_at DESC
+         LIMIT ' . (int) $limit,
+        [$like, $like, $like, $like, $like, $like]
+    );
 }
 
 function recent_project_analyses(string $fullName, int $limit = 5): array
@@ -907,8 +947,8 @@ function discover_setting_definitions(): array
     return [
         'discover_daily_enabled' => ['label' => '启用日报自动采集', 'type' => 'checkbox', 'default' => '1', 'description' => '关闭后 daily 定时任务会跳过。'],
         'discover_weekly_enabled' => ['label' => '启用周榜自动采集', 'type' => 'checkbox', 'default' => '1', 'description' => '关闭后 weekly 定时任务会跳过。'],
-        'discover_analyze_all' => ['label' => 'DeepSeek 处理全部候选', 'type' => 'checkbox', 'default' => '1', 'description' => '开启后本轮抓到的候选都会进入 DeepSeek 解读。'],
-        'discover_max_projects' => ['label' => 'DeepSeek 分析上限', 'type' => 'number', 'default' => '3', 'description' => '仅在关闭“处理全部候选”时生效。'],
+        'discover_analyze_all' => ['label' => 'GIR 解读全部候选', 'type' => 'checkbox', 'default' => '1', 'description' => '开启后本轮抓到的候选都会进入 GIR 解读。'],
+        'discover_max_projects' => ['label' => 'GIR 解读上限', 'type' => 'number', 'default' => '3', 'description' => '仅在关闭“解读全部候选”时生效。'],
         'discover_per_page' => ['label' => '每个平台/分类候选数量', 'type' => 'number', 'default' => '20', 'description' => '每个固定来源、分类或搜索语句最多抓多少候选。'],
         'discover_recent_days_daily' => ['label' => '日报 GitHub 搜索窗口', 'type' => 'number', 'default' => '3', 'description' => 'GitHub Search 日榜向前搜索多少天。'],
         'discover_recent_days_weekly' => ['label' => '周榜 GitHub 搜索窗口', 'type' => 'number', 'default' => '14', 'description' => 'GitHub Search 周榜向前搜索多少天。'],
@@ -917,8 +957,8 @@ function discover_setting_definitions(): array
         'discover_min_stars_topic' => ['label' => 'Topic 最低 Stars', 'type' => 'number', 'default' => '50', 'description' => '普通 topic 搜索的最低 Stars。'],
         'discover_min_stars_agent' => ['label' => 'Agent 最低 Stars', 'type' => 'number', 'default' => '30', 'description' => 'agent topic 搜索的最低 Stars。'],
         'discover_extra_queries' => ['label' => '额外搜索语句', 'type' => 'textarea', 'default' => '', 'description' => '每行一条 GitHub Search 查询，可使用 {since}。'],
-        'deepseek_system_prompt' => ['label' => 'DeepSeek 系统提示词', 'type' => 'textarea', 'default' => default_deepseek_system_prompt(), 'description' => '控制 DeepSeek 的角色、解读边界和评分标准。'],
-        'deepseek_task_prompt' => ['label' => 'DeepSeek 解读任务提示词', 'type' => 'textarea', 'default' => default_deepseek_task_prompt(), 'description' => '控制每个项目解读的口吻、重点和判断方式；输出 JSON 字段结构由代码固定。'],
+        'deepseek_system_prompt' => ['label' => 'GIR 解读系统提示词', 'type' => 'textarea', 'default' => default_deepseek_system_prompt(), 'description' => '控制 GIR 解读的角色、边界和评分标准；当前模型供应商为 DeepSeek。'],
+        'deepseek_task_prompt' => ['label' => 'GIR 解读任务提示词', 'type' => 'textarea', 'default' => default_deepseek_task_prompt(), 'description' => '控制每个项目解读的口吻、重点和判断方式；输出 JSON 字段结构由代码固定。'],
     ];
 }
 
@@ -944,10 +984,10 @@ function discover_platform_catalog(): array
         [
             'key' => 'trendshift',
             'label' => 'Trendshift 趋势',
-            'period' => 'daily / weekly',
-            'limit' => '每周期最多 discover_per_page 个候选',
-            'categories' => ['daily', 'weekly'],
-            'source' => 'https://trendshift.io/',
+            'period' => 'daily / weekly / topic',
+            'limit' => '主榜、GitHub Trending、Repository engagements、每个 topic 最多 discover_per_page 个候选',
+            'categories' => ['daily', 'weekly', 'github-trending', 'repository-engagements', 'topics/*'],
+            'source' => 'https://trendshift.io/ + /topics/*',
         ],
         [
             'key' => 'reporank',
@@ -967,20 +1007,24 @@ function discover_platform_catalog(): array
         ],
         [
             'key' => 'github_search',
-            'label' => 'GitHub 搜索榜',
-            'period' => '日报最近 N 天 / 周榜最近 N 天',
+            'label' => 'GitHub 搜索',
+            'period' => '手动 / 动态搜索',
             'limit' => '每条搜索最多 discover_per_page 个候选',
             'categories' => ['综合', '新项目', 'ai', 'llm', 'agent', 'php', '额外搜索语句'],
             'source' => 'https://api.github.com/search/repositories',
+            'default_enabled' => false,
         ],
     ];
 }
 
 function discover_fixed_platforms(): array
 {
+    $platforms = array_filter(discover_platform_catalog(), static function (array $platform): bool {
+        return !isset($platform['default_enabled']) || $platform['default_enabled'] !== false;
+    });
     return array_map(static function (array $platform): string {
         return (string) $platform['key'];
-    }, discover_platform_catalog());
+    }, $platforms);
 }
 
 function discover_fixed_topics(): array

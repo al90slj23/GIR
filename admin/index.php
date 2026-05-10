@@ -65,7 +65,7 @@ render_header('后台');
 
 <section class="panel">
     <h2>数据统计</h2>
-    <p class="muted">查看项目库总量、DeepSeek 解读量、各平台规模和最近采集运行。</p>
+    <p class="muted">查看项目库总量、GIR 解读量、各平台规模和最近采集运行。</p>
     <a class="button" href="/admin/stats.php">查看统计</a>
 </section>
 
