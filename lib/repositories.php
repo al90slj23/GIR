@@ -1040,12 +1040,14 @@ function public_gir_progress_summary(?array $latestRunRow): array
     $platformRows = db_all(
         'SELECT rr.source_platform,
                 COUNT(DISTINCT rr.project_id) AS raw_rank,
-                COUNT(DISTINCT CASE WHEN ar.id IS NOT NULL THEN rr.project_id ELSE NULL END) AS analyzed
+                COUNT(DISTINCT ar.project_id) AS analyzed
          FROM project_reports rr
          INNER JOIN projects p ON p.id = rr.project_id
-         LEFT JOIN project_reports ar ON ar.project_id = rr.project_id
-              AND ar.raw_rank_only = 0
-              AND ar.one_sentence <> ""
+         LEFT JOIN (
+             SELECT DISTINCT project_id
+             FROM project_reports
+             WHERE raw_rank_only = 0 AND one_sentence <> ""
+         ) ar ON ar.project_id = rr.project_id
          WHERE rr.raw_rank_only = 1 AND p.is_hidden = 0' . ranking_primary_platform_filter_sql('rr') . '
          GROUP BY rr.source_platform
          ORDER BY ' . ranking_platform_order_sql('source_platform') . ' ASC, raw_rank DESC
