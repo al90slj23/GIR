@@ -226,6 +226,10 @@ a:hover {
   box-shadow: var(--shadow-md);
 }
 
+.theme-menu[hidden] {
+  display: none !important;
+}
+
 .theme-menu button {
   width: 100%;
   padding: 8px 10px;
