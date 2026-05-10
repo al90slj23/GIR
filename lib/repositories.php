@@ -1231,7 +1231,7 @@ function public_gir_progress_summary(?array $latestRunRow): array
         'latest_at' => $latestAnalysisAt,
         'active' => $active,
         'mode' => $active ? 'running' : 'idle',
-        'status_text' => $active ? '正在解读' : ($remaining > 0 ? '待触发解读' : '等待新增'),
+        'status_text' => $active ? '正在解读' : ($remaining > 0 ? '剩余待解读' : '等待新增'),
         'timing' => progress_timing($timingRow, $total, $analyzed),
         'next_schedule' => progress_next_schedule('gir'),
         'history' => progress_run_history_stats('gir'),
