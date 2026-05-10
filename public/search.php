@@ -2,47 +2,79 @@
 require_once (is_file(__DIR__ . '/../lib/bootstrap.php') ? __DIR__ . '/../lib/bootstrap.php' : __DIR__ . '/lib/bootstrap.php');
 require_once (is_file(__DIR__ . '/_layout.php') ? __DIR__ . '/_layout.php' : __DIR__ . '/public/_layout.php');
 
-$query = isset($_GET['q']) ? truncate_text((string) $_GET['q'], 120) : '';
-$results = $query !== '' ? search_projects($query, 40) : [];
+$query = isset($_GET['q']) ? trim(truncate_text((string) $_GET['q'], 120)) : '';
+$search = $query !== '' ? github_search_repositories($query, 30) : ['ok' => true, 'items' => [], 'total_count' => 0, 'error' => ''];
+$results = $search['items'] ?? [];
+$localIngest = ['stored' => 0, 'project_ids' => []];
+if ($query !== '' && !empty($search['ok']) && $results) {
+    $localIngest = ingest_github_search_results_locally($query, $results);
+}
+$localIndex = projects_index_by_full_names(array_map(static function (array $row): string {
+    return (string) ($row['full_name'] ?? '');
+}, $results));
+$dispatch = null;
+if ($query !== '' && !empty($search['ok']) && $results) {
+    $dispatch = trigger_github_search_ingest($query);
+}
 
 render_header('GitHub 搜索');
 ?>
-<div class="page-head">
-    <div>
-        <h1>GitHub 搜索</h1>
-        <div class="muted">这个入口独立于主排行，用来按关键词查找项目库；后续会接入动态 GitHub 搜索抓取和 GIR 解读队列。</div>
-    </div>
-</div>
-
-<?php render_github_search_entry($query); ?>
-
 <?php if ($query === ''): ?>
-    <div class="empty">输入项目名、语言、主题或用途开始搜索。</div>
+    <div class="empty">输入项目名、主题、语言或用途后，会直接搜索 GitHub 仓库。</div>
+<?php elseif (empty($search['ok'])): ?>
+    <div class="empty">GitHub 搜索失败：<?= h((string) ($search['error'] ?? 'unknown_error')) ?></div>
 <?php elseif (!$results): ?>
-    <div class="empty">项目库里还没有匹配 “<?= h($query) ?>” 的项目。</div>
+    <div class="empty">GitHub 没有返回匹配 “<?= h($query) ?>” 的仓库。</div>
 <?php else: ?>
+    <div class="section-head compact">
+        <div>
+            <h2>GitHub 搜索结果</h2>
+            <div class="muted">关键词 “<?= h($query) ?>” · GitHub 返回约 <?= number_format((int) ($search['total_count'] ?? count($results))) ?> 个仓库，当前展示前 <?= count($results) ?> 个 · 已即时入库 <?= number_format((int) ($localIngest['stored'] ?? 0)) ?> 个。</div>
+        </div>
+        <?php if ($dispatch): ?>
+            <?php if (!empty($dispatch['ok']) && !empty($dispatch['skipped'])): ?>
+                <span class="badge muted">已在队列中</span>
+            <?php elseif (!empty($dispatch['ok'])): ?>
+                <span class="badge green">已提交入库</span>
+            <?php else: ?>
+                <span class="badge red">入库触发失败</span>
+            <?php endif; ?>
+        <?php endif; ?>
+    </div>
+    <?php if ($dispatch && empty($dispatch['ok'])): ?>
+        <div class="notice warning">GitHub 搜索结果已显示，但入库队列没有触发成功：<?= h((string) ($dispatch['error'] ?? 'unknown_error')) ?></div>
+    <?php endif; ?>
     <div class="grid">
         <?php foreach ($results as $index => $row): ?>
             <?php
-            $summary = trim((string) ($row['analysis_summary_zh'] ?? ''));
+            $local = $localIndex[(string) ($row['full_name'] ?? '')] ?? [];
+            $summary = trim((string) ($local['analysis_summary_zh'] ?? ''));
             if ($summary === '') {
-                $summary = trim((string) ($row['analysis_one_sentence'] ?? ''));
+                $summary = trim((string) ($local['analysis_one_sentence'] ?? ''));
             }
             if ($summary === '') {
-                $summary = trim((string) ($row['analysis_change_note'] ?? ''));
+                $summary = trim((string) ($local['analysis_change_note'] ?? ''));
             }
             if ($summary === '') {
                 $summary = trim((string) ($row['description'] ?? ''));
             }
-            $hasGirAnalysis = trim((string) ($row['analysis_one_sentence'] ?? '')) !== ''
-                || trim((string) ($row['analysis_summary_zh'] ?? '')) !== ''
-                || trim((string) ($row['analysis_change_note'] ?? '')) !== '';
+            $hasGirAnalysis = trim((string) ($local['analysis_one_sentence'] ?? '')) !== ''
+                || trim((string) ($local['analysis_summary_zh'] ?? '')) !== ''
+                || trim((string) ($local['analysis_change_note'] ?? '')) !== '';
+            $projectId = (int) ($local['project_id'] ?? 0);
+            $topics = is_array($row['topics'] ?? null) ? implode(' · ', array_slice($row['topics'], 0, 4)) : '';
             ?>
             <article class="project-card">
                 <div class="project-top">
                     <div>
-                        <div class="rank-label">搜索结果 #<?= $index + 1 ?></div>
-                        <h2 class="project-title"><a href="/project.php?id=<?= (int) $row['project_id'] ?>"><?= h($row['full_name']) ?></a></h2>
+                        <div class="rank-label">GitHub 搜索 #<?= $index + 1 ?></div>
+                        <h2 class="project-title">
+                            <?php if ($projectId > 0): ?>
+                                <a href="/project.php?id=<?= $projectId ?>"><?= h($row['full_name']) ?></a>
+                            <?php else: ?>
+                                <a href="<?= h($row['html_url']) ?>" target="_blank" rel="noreferrer"><?= h($row['full_name']) ?></a>
+                            <?php endif; ?>
+                        </h2>
                         <div class="muted"><?= h($row['description'] ?: '暂无项目简介') ?></div>
                     </div>
                     <span class="<?= $hasGirAnalysis ? 'badge green' : 'badge muted' ?>"><?= $hasGirAnalysis ? 'GIR 解读' : '待 GIR 解读' ?></span>
@@ -52,13 +84,19 @@ render_header('GitHub 搜索');
                     <span class="metric">Forks <?= (int) $row['forks'] ?></span>
                     <span class="metric"><?= h($row['language'] ?: '未知语言') ?></span>
                     <span class="metric">最近推送 <?= h($row['pushed_at'] ?: '-') ?></span>
+                    <?php if ($topics !== ''): ?>
+                        <span class="metric"><?= h($topics) ?></span>
+                    <?php endif; ?>
                 </div>
-                <p class="desc"><?= h($summary ?: '等待 GIR 解读，暂时先显示项目基础信息。') ?></p>
+                <p class="desc"><?= h($summary ?: '已提交 GIR 入库与解读队列，暂时先显示 GitHub 项目简介。') ?></p>
                 <div class="muted">
-                    <a href="/project.php?id=<?= (int) $row['project_id'] ?>">查看 GIR 解读</a>
-                    · <a href="<?= h($row['html_url']) ?>" target="_blank" rel="noreferrer">GitHub</a>
-                    <?php if (!empty($row['analysis_report_date'])): ?>
-                        · GIR 解读日期 <?= h($row['analysis_report_date']) ?>
+                    <?php if ($projectId > 0): ?>
+                        <a href="/project.php?id=<?= $projectId ?>">查看 GIR 解读</a>
+                        ·
+                    <?php endif; ?>
+                    <a href="<?= h($row['html_url']) ?>" target="_blank" rel="noreferrer">GitHub</a>
+                    <?php if (!empty($local['analysis_report_date'])): ?>
+                        · GIR 解读日期 <?= h((string) $local['analysis_report_date']) ?>
                     <?php endif; ?>
                 </div>
             </article>

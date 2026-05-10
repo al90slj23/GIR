@@ -44,16 +44,8 @@ $pageTitle = app_setting('daily_title', '今日 GitHub 灵感榜');
 
 render_header($pageTitle);
 ?>
-<div class="page-head">
-    <div>
-        <h1><?= h($pageTitle) ?></h1>
-        <div class="muted"><?= h(app_setting('daily_subtitle', '每天发现值得研究和学习的 GitHub 灵感项目。')) ?></div>
-    </div>
-</div>
-
 <?php render_deepseek_progress_panel(); ?>
 <?php render_platform_tabs('/index.php', $platforms, $platform, $view, $dateRange, $tag); ?>
-<?php render_github_search_entry(); ?>
 <?php render_tag_tabs('/index.php', $tags, $tag, $platform, $view, $dateRange, $activePlatformRangeTotal, $activePlatformFullTotal); ?>
 <?php render_date_range_filter('/index.php', $platform, $tag, $view, $dateRange); ?>
 

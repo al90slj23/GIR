@@ -44,15 +44,7 @@ $pageTitle = app_setting('weekly_title', '本周 GitHub 灵感榜');
 
 render_header($pageTitle);
 ?>
-<div class="page-head">
-    <div>
-        <h1><?= h($pageTitle) ?></h1>
-        <div class="muted"><?= h(app_setting('weekly_subtitle', '按周聚合更值得研究、学习和复刻的 GitHub 灵感项目。')) ?></div>
-    </div>
-</div>
-
 <?php render_platform_tabs('/weekly.php', $platforms, $platform, $view, $dateRange, $tag); ?>
-<?php render_github_search_entry(); ?>
 <?php render_tag_tabs('/weekly.php', $tags, $tag, $platform, $view, $dateRange, $activePlatformRangeTotal, $activePlatformFullTotal); ?>
 <?php render_date_range_filter('/weekly.php', $platform, $tag, $view, $dateRange); ?>
 

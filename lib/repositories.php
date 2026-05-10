@@ -588,6 +588,254 @@ function search_projects(string $query, int $limit = 30): array
     );
 }
 
+function projects_index_by_full_names(array $fullNames): array
+{
+    $clean = [];
+    foreach ($fullNames as $fullName) {
+        $fullName = trim((string) $fullName);
+        if ($fullName !== '') {
+            $clean[] = $fullName;
+        }
+    }
+    $clean = array_values(array_unique($clean));
+    if (!$clean) {
+        return [];
+    }
+
+    $placeholders = implode(',', array_fill(0, count($clean), '?'));
+    $rows = db_all(
+        'SELECT p.id AS project_id, p.full_name,
+                ar.id AS analysis_id,
+                ar.one_sentence AS analysis_one_sentence,
+                ar.summary_zh AS analysis_summary_zh,
+                ar.change_note AS analysis_change_note,
+                ar.report_date AS analysis_report_date
+         FROM projects p
+         LEFT JOIN project_reports ar ON ar.id = (
+             SELECT rr.id
+             FROM project_reports rr
+             WHERE rr.project_id = p.id
+               AND rr.raw_rank_only = 0
+               AND rr.one_sentence <> ""
+             ORDER BY rr.report_date DESC, rr.id DESC
+             LIMIT 1
+         )
+         WHERE p.full_name IN (' . $placeholders . ')',
+        $clean
+    );
+
+    $index = [];
+    foreach ($rows as $row) {
+        $index[(string) $row['full_name']] = $row;
+    }
+    return $index;
+}
+
+function github_search_repositories(string $query, int $limit = 20): array
+{
+    global $config;
+
+    $query = trim($query);
+    if ($query === '') {
+        return ['ok' => true, 'items' => [], 'total_count' => 0, 'error' => ''];
+    }
+
+    $limit = max(1, min(50, $limit));
+    $url = 'https://api.github.com/search/repositories?' . http_build_query([
+        'q' => $query,
+        'sort' => 'stars',
+        'order' => 'desc',
+        'per_page' => $limit,
+    ]);
+
+    $headers = [
+        'Accept: application/vnd.github+json',
+        'X-GitHub-Api-Version: 2022-11-28',
+    ];
+    if (!empty($config['github']['token'])) {
+        $headers[] = 'Authorization: Bearer ' . $config['github']['token'];
+    }
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_USERAGENT => 'GIR GitHub Search',
+        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_TIMEOUT => 20,
+        CURLOPT_CONNECTTIMEOUT => 8,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => 0,
+    ]);
+
+    $response = curl_exec($ch);
+    $errno = curl_errno($ch);
+    $error = curl_error($ch);
+    $http = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($errno) {
+        return ['ok' => false, 'items' => [], 'total_count' => 0, 'error' => 'curl_error: ' . $error, 'http' => $http];
+    }
+
+    $data = json_decode((string) $response, true);
+    if ($http < 200 || $http >= 300 || !is_array($data)) {
+        $message = is_array($data) && isset($data['message']) ? (string) $data['message'] : truncate_text((string) $response, 300);
+        return ['ok' => false, 'items' => [], 'total_count' => 0, 'error' => 'github_search_failed: HTTP ' . $http . ' ' . $message, 'http' => $http];
+    }
+
+    $items = [];
+    foreach (($data['items'] ?? []) as $item) {
+        if (!is_array($item)) {
+            continue;
+        }
+        $fullName = trim((string) ($item['full_name'] ?? ''));
+        if ($fullName === '') {
+            continue;
+        }
+        $items[] = [
+            'github_id' => (int) ($item['id'] ?? 0),
+            'name' => (string) ($item['name'] ?? ''),
+            'full_name' => $fullName,
+            'html_url' => (string) ($item['html_url'] ?? ('https://github.com/' . $fullName)),
+            'description' => (string) ($item['description'] ?? ''),
+            'stars' => (int) ($item['stargazers_count'] ?? 0),
+            'forks' => (int) ($item['forks_count'] ?? 0),
+            'language' => (string) ($item['language'] ?? ''),
+            'topics' => is_array($item['topics'] ?? null) ? $item['topics'] : [],
+            'pushed_at' => normalize_datetime($item['pushed_at'] ?? null),
+            'updated_at' => normalize_datetime($item['updated_at'] ?? null),
+            'is_fork' => !empty($item['fork']),
+            'is_archived' => !empty($item['archived']),
+            'open_issues' => (int) ($item['open_issues_count'] ?? 0),
+        ];
+    }
+
+    return [
+        'ok' => true,
+        'items' => $items,
+        'total_count' => (int) ($data['total_count'] ?? count($items)),
+        'error' => '',
+        'http' => $http,
+    ];
+}
+
+function github_search_query_hash(string $query): string
+{
+    return sha1(trim(strtolower($query)));
+}
+
+function github_search_recent_dispatch(string $query, int $cooldownMinutes = 30): ?array
+{
+    $hash = github_search_query_hash($query);
+    $row = db_one('SELECT * FROM github_search_requests WHERE query_hash = ?', [$hash]);
+    if (!$row) {
+        return null;
+    }
+    $lastDispatchedAt = (string) ($row['last_dispatched_at'] ?? '');
+    $timestamp = $lastDispatchedAt !== '' ? strtotime($lastDispatchedAt) : 0;
+    if ($timestamp && time() - (int) $timestamp < $cooldownMinutes * 60) {
+        return $row;
+    }
+    return null;
+}
+
+function record_github_search_request(string $query, string $status, string $error = ''): void
+{
+    $now = date('Y-m-d H:i:s');
+    db_exec(
+        'INSERT INTO github_search_requests
+         (query_hash, query_text, status, last_error, last_dispatched_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           query_text = VALUES(query_text),
+           status = VALUES(status),
+           last_error = VALUES(last_error),
+           last_dispatched_at = VALUES(last_dispatched_at),
+           updated_at = VALUES(updated_at)',
+        [
+            github_search_query_hash($query),
+            truncate_text($query, 500),
+            truncate_text($status, 24),
+            truncate_text($error, 1000),
+            $now,
+            $now,
+            $now,
+        ]
+    );
+}
+
+function trigger_github_search_ingest(string $query): array
+{
+    $query = trim($query);
+    if ($query === '') {
+        return ['ok' => false, 'error' => 'empty_query'];
+    }
+
+    $recent = github_search_recent_dispatch($query);
+    if ($recent) {
+        return [
+            'ok' => true,
+            'skipped' => true,
+            'status' => (string) ($recent['status'] ?? 'dispatched'),
+            'last_dispatched_at' => (string) ($recent['last_dispatched_at'] ?? ''),
+        ];
+    }
+
+    $result = trigger_github_workflow([
+        'run_type' => 'manual',
+        'platforms' => 'github_search',
+        'extra_query' => $query,
+    ]);
+    record_github_search_request($query, $result['ok'] ? 'dispatched' : 'failed', (string) ($result['error'] ?? ''));
+    return $result + ['skipped' => false];
+}
+
+function ingest_github_search_results_locally(string $query, array $items): array
+{
+    $stored = 0;
+    $projectIds = [];
+    $reportDate = date('Y-m-d');
+    $sourceTag = '搜索:' . truncate_text($query, 52);
+
+    foreach ($items as $index => $item) {
+        if (!is_array($item) || trim((string) ($item['full_name'] ?? '')) === '') {
+            continue;
+        }
+        $projectId = upsert_project([
+            'github_id' => (int) ($item['github_id'] ?? 0),
+            'name' => (string) ($item['name'] ?? ''),
+            'full_name' => (string) ($item['full_name'] ?? ''),
+            'html_url' => (string) ($item['html_url'] ?? ''),
+            'description' => (string) ($item['description'] ?? ''),
+            'stars' => (int) ($item['stars'] ?? 0),
+            'forks' => (int) ($item['forks'] ?? 0),
+            'language' => (string) ($item['language'] ?? ''),
+            'topics' => $item['topics'] ?? [],
+            'pushed_at' => (string) ($item['pushed_at'] ?? ''),
+        ]);
+        if ($projectId <= 0) {
+            continue;
+        }
+        upsert_report(
+            $projectId,
+            null,
+            'manual',
+            $reportDate,
+            ['raw_rank_only' => true],
+            [
+                'platform' => 'github_search',
+                'tag' => $sourceTag,
+                'rank' => $index + 1,
+                'score' => (float) ($item['stars'] ?? 0),
+            ]
+        );
+        $projectIds[(string) ($item['full_name'] ?? '')] = $projectId;
+        $stored++;
+    }
+
+    return ['stored' => $stored, 'project_ids' => $projectIds];
+}
+
 function recent_project_analyses(string $fullName, int $limit = 5): array
 {
     return db_all(
@@ -670,79 +918,13 @@ function admin_stats(): array
     ];
 }
 
-function public_progress_summary(): array
+function latest_run_summary(?array $latestRunRow): ?array
 {
-    $latestDateRow = db_one("SELECT MAX(report_date) AS report_date FROM project_reports WHERE period_type = 'daily'");
-    $reportDate = (string) ($latestDateRow['report_date'] ?? '');
-    $platforms = [];
-    $focus = [
-        'source_platform' => '',
-        'label' => '等待采集',
-        'total' => 0,
-        'analyzed' => 0,
-        'raw_rank' => 0,
-        'percent' => 0,
-        'latest_at' => '',
-        'timing' => progress_timing([], 0, 0),
-    ];
-
-    if ($reportDate !== '') {
-        $rows = db_all(
-            'SELECT source_platform,
-                    COUNT(*) AS total,
-                    SUM(CASE WHEN raw_rank_only = 0 AND one_sentence <> "" THEN 1 ELSE 0 END) AS analyzed,
-                    SUM(CASE WHEN raw_rank_only = 1 THEN 1 ELSE 0 END) AS raw_rank,
-                    MIN(created_at) AS started_at,
-                    MIN(CASE WHEN raw_rank_only = 0 AND one_sentence <> "" THEN created_at ELSE NULL END) AS first_analysis_at,
-                    MAX(CASE WHEN raw_rank_only = 0 AND one_sentence <> "" THEN created_at ELSE NULL END) AS latest_analysis_at,
-                    MAX(created_at) AS latest_at
-             FROM project_reports
-             WHERE period_type = ? AND report_date = ?' . ranking_primary_platform_filter_sql('') . '
-             GROUP BY source_platform
-             ORDER BY latest_at DESC, total DESC, source_platform ASC
-             LIMIT 8',
-            ['daily', $reportDate]
-        );
-
-        foreach ($rows as $row) {
-            $rawRank = (int) ($row['raw_rank'] ?? 0);
-            $analyzed = (int) ($row['analyzed'] ?? 0);
-            $percent = $rawRank > 0 ? round(min(100, ($analyzed / $rawRank) * 100), 1) : ($analyzed > 0 ? 100 : 0);
-            $platform = (string) ($row['source_platform'] ?? '');
-            $platforms[] = [
-                'source_platform' => $platform,
-                'label' => ranking_platform_label($platform),
-                'total' => (int) ($row['total'] ?? 0),
-                'analyzed' => $analyzed,
-                'raw_rank' => $rawRank,
-                'percent' => $percent,
-                'latest_at' => (string) ($row['latest_at'] ?? ''),
-                'timing' => progress_timing($row, $rawRank, $analyzed),
-            ];
-        }
-
-        if ($platforms) {
-            $focus = $platforms[0];
-        }
+    if (!$latestRunRow) {
+        return null;
     }
 
-    $latestRunRow = db_one('SELECT * FROM runs ORDER BY started_at DESC, id DESC LIMIT 1');
-    $latestAt = (string) ($focus['latest_at'] ?? '');
-    $recentSeconds = $latestAt !== '' ? time() - (int) strtotime($latestAt) : 999999;
-    $latestRunTimestamp = 0;
-    if ($latestRunRow) {
-        foreach (['updated_at', 'finished_at', 'started_at'] as $timeKey) {
-            $timestamp = isset($latestRunRow[$timeKey]) ? (int) strtotime((string) $latestRunRow[$timeKey]) : 0;
-            if ($timestamp > $latestRunTimestamp) {
-                $latestRunTimestamp = $timestamp;
-            }
-        }
-    }
-    $runRecentSeconds = $latestRunTimestamp > 0 ? time() - $latestRunTimestamp : 999999;
-    $active = ($latestRunRow && (string) ($latestRunRow['status'] ?? '') === 'started')
-        || ($latestAt !== '' && $recentSeconds >= 0 && $recentSeconds <= 20 * 60)
-        || ($runRecentSeconds >= 0 && $runRecentSeconds <= 20 * 60);
-    $latestRun = $latestRunRow ? [
+    return [
         'status' => (string) ($latestRunRow['status'] ?? ''),
         'run_type' => (string) ($latestRunRow['run_type'] ?? ''),
         'started_at' => (string) ($latestRunRow['started_at'] ?? ''),
@@ -751,15 +933,186 @@ function public_progress_summary(): array
         'total_found' => (int) ($latestRunRow['total_found'] ?? 0),
         'total_analyzed' => (int) ($latestRunRow['total_analyzed'] ?? 0),
         'source' => (string) ($latestRunRow['source'] ?? ''),
-    ] : null;
+    ];
+}
+
+function run_recent_seconds(?array $latestRunRow): int
+{
+    if (!$latestRunRow) {
+        return 999999;
+    }
+    $latestRunTimestamp = 0;
+    foreach (['updated_at', 'finished_at', 'started_at'] as $timeKey) {
+        $timestamp = isset($latestRunRow[$timeKey]) ? (int) strtotime((string) $latestRunRow[$timeKey]) : 0;
+        if ($timestamp > $latestRunTimestamp) {
+            $latestRunTimestamp = $timestamp;
+        }
+    }
+    return $latestRunTimestamp > 0 ? time() - $latestRunTimestamp : 999999;
+}
+
+function public_collection_progress_summary(?array $latestRunRow): array
+{
+    $latestDateRow = db_one("SELECT MAX(report_date) AS report_date FROM project_reports WHERE period_type = 'daily' AND raw_rank_only = 1");
+    $reportDate = (string) ($latestDateRow['report_date'] ?? '');
+    $rows = [];
+    if ($reportDate !== '') {
+        $rows = db_all(
+            'SELECT r.source_platform,
+                    COUNT(*) AS raw_rank,
+                    COUNT(DISTINCT r.project_id) AS projects,
+                    MAX(r.created_at) AS latest_at
+             FROM project_reports r
+             INNER JOIN projects p ON p.id = r.project_id
+             WHERE r.period_type = ? AND r.report_date = ? AND r.raw_rank_only = 1 AND p.is_hidden = 0' . ranking_primary_platform_filter_sql('r.') . '
+             GROUP BY r.source_platform
+             ORDER BY ' . ranking_platform_order_sql('r.source_platform') . ' ASC, raw_rank DESC',
+            ['daily', $reportDate]
+        );
+    }
+
+    $platforms = [];
+    $rawRank = 0;
+    $projectTotal = 0;
+    $latestAt = '';
+    foreach ($rows as $row) {
+        $platformRaw = (int) ($row['raw_rank'] ?? 0);
+        $platformProjects = (int) ($row['projects'] ?? 0);
+        $platform = (string) ($row['source_platform'] ?? '');
+        $rawRank += $platformRaw;
+        $projectTotal += $platformProjects;
+        $rowLatestAt = (string) ($row['latest_at'] ?? '');
+        if ($rowLatestAt > $latestAt) {
+            $latestAt = $rowLatestAt;
+        }
+        $platforms[] = [
+            'source_platform' => $platform,
+            'label' => ranking_platform_label($platform),
+            'raw_rank' => $platformRaw,
+            'projects' => $platformProjects,
+            'analyzed' => $platformProjects,
+            'percent' => 100,
+            'latest_at' => $rowLatestAt,
+        ];
+    }
+
+    $target = max((int) ($latestRunRow['total_found'] ?? 0), $rawRank);
+    $percent = $target > 0 ? round(min(100, ($rawRank / $target) * 100), 1) : 0;
+    $active = ($latestRunRow && (string) ($latestRunRow['status'] ?? '') === 'started')
+        || ($latestAt !== '' && time() - (int) strtotime($latestAt) <= 20 * 60)
+        || (run_recent_seconds($latestRunRow) <= 20 * 60);
+    $timingRow = [
+        'started_at' => (string) ($latestRunRow['started_at'] ?? ($latestAt ?: '')),
+        'first_analysis_at' => (string) ($latestRunRow['started_at'] ?? ($latestAt ?: '')),
+        'latest_analysis_at' => $latestAt,
+    ];
+
+    return [
+        'label' => '平台采集入库',
+        'report_date' => $reportDate,
+        'active' => $active,
+        'status_text' => $active ? '正在采集' : '最近更新',
+        'raw_rank' => $rawRank,
+        'projects' => $projectTotal,
+        'target' => $target,
+        'percent' => $percent,
+        'latest_at' => $latestAt,
+        'timing' => progress_timing($timingRow, $target, $rawRank),
+        'platforms' => $platforms,
+    ];
+}
+
+function public_gir_progress_summary(?array $latestRunRow): array
+{
+    $projectTotals = db_one(
+        'SELECT COUNT(*) AS total
+         FROM projects
+         WHERE is_hidden = 0'
+    );
+    $analysisTotals = db_one(
+        'SELECT COUNT(DISTINCT p.id) AS analyzed,
+                MIN(r.created_at) AS first_analysis_at,
+                MAX(r.created_at) AS latest_analysis_at
+         FROM projects p
+         INNER JOIN project_reports r ON r.project_id = p.id
+         WHERE p.is_hidden = 0 AND r.raw_rank_only = 0 AND r.one_sentence <> ""'
+    );
+    $platformRows = db_all(
+        'SELECT rr.source_platform,
+                COUNT(DISTINCT rr.project_id) AS raw_rank,
+                COUNT(DISTINCT CASE WHEN ar.id IS NOT NULL THEN rr.project_id ELSE NULL END) AS analyzed
+         FROM project_reports rr
+         INNER JOIN projects p ON p.id = rr.project_id
+         LEFT JOIN project_reports ar ON ar.project_id = rr.project_id
+              AND ar.raw_rank_only = 0
+              AND ar.one_sentence <> ""
+         WHERE rr.raw_rank_only = 1 AND p.is_hidden = 0' . ranking_primary_platform_filter_sql('rr.') . '
+         GROUP BY rr.source_platform
+         ORDER BY ' . ranking_platform_order_sql('rr.source_platform') . ' ASC, raw_rank DESC
+         LIMIT 8'
+    );
+
+    $total = (int) ($projectTotals['total'] ?? 0);
+    $analyzed = (int) ($analysisTotals['analyzed'] ?? 0);
+    $percent = $total > 0 ? round(min(100, ($analyzed / $total) * 100), 1) : 0;
+    $firstAnalysisAt = (string) ($analysisTotals['first_analysis_at'] ?? '');
+    $latestAnalysisAt = (string) ($analysisTotals['latest_analysis_at'] ?? '');
+    $startedAt = (string) ($latestRunRow['status'] ?? '') === 'started'
+        ? (string) ($latestRunRow['started_at'] ?? '')
+        : $firstAnalysisAt;
+    $timingRow = [
+        'started_at' => $startedAt,
+        'first_analysis_at' => $firstAnalysisAt,
+        'latest_analysis_at' => $latestAnalysisAt,
+    ];
+    $active = ($latestRunRow && (string) ($latestRunRow['status'] ?? '') === 'started')
+        || ($latestAnalysisAt !== '' && time() - (int) strtotime($latestAnalysisAt) <= 20 * 60);
+
+    $platforms = [];
+    foreach ($platformRows as $row) {
+        $rawRank = (int) ($row['raw_rank'] ?? 0);
+        $platformAnalyzed = (int) ($row['analyzed'] ?? 0);
+        $platform = (string) ($row['source_platform'] ?? '');
+        $platforms[] = [
+            'source_platform' => $platform,
+            'label' => ranking_platform_label($platform),
+            'raw_rank' => $rawRank,
+            'analyzed' => $platformAnalyzed,
+            'percent' => $rawRank > 0 ? round(min(100, ($platformAnalyzed / $rawRank) * 100), 1) : 0,
+        ];
+    }
+
+    return [
+        'source_platform' => 'all_projects',
+        'label' => '全局 GIR 解读',
+        'total' => $total,
+        'analyzed' => $analyzed,
+        'raw_rank' => $total,
+        'percent' => $percent,
+        'latest_at' => $latestAnalysisAt,
+        'active' => $active,
+        'status_text' => $active ? '正在解读' : '最近更新',
+        'timing' => progress_timing($timingRow, $total, $analyzed),
+        'platforms' => $platforms,
+    ];
+}
+
+function public_progress_summary(): array
+{
+    $latestRunRow = db_one('SELECT * FROM runs ORDER BY started_at DESC, id DESC LIMIT 1');
+    $collection = public_collection_progress_summary($latestRunRow);
+    $gir = public_gir_progress_summary($latestRunRow);
+    $active = !empty($collection['active']) || !empty($gir['active']) || run_recent_seconds($latestRunRow) <= 20 * 60;
 
     return [
         'generated_at' => date('Y-m-d H:i:s'),
-        'report_date' => $reportDate,
+        'report_date' => (string) ($collection['report_date'] ?? ''),
         'active' => $active,
-        'focus' => $focus,
-        'platforms' => $platforms,
-        'latest_run' => $latestRun,
+        'focus' => $gir,
+        'platforms' => $gir['platforms'],
+        'collection' => $collection,
+        'gir' => $gir,
+        'latest_run' => latest_run_summary($latestRunRow),
     ];
 }
 
@@ -1118,23 +1471,29 @@ function github_trigger_configured(): bool
         && $config['github']['workflow'] !== '';
 }
 
-function trigger_github_discover(string $runType): array
+function trigger_github_workflow(array $inputs): array
 {
     global $config;
-
-    if (!in_array($runType, ['daily', 'weekly', 'manual'], true)) {
-        $runType = 'daily';
-    }
 
     if (!github_trigger_configured()) {
         return ['ok' => false, 'error' => 'github_dispatch_not_configured'];
     }
 
+    $cleanInputs = [];
+    foreach ($inputs as $key => $value) {
+        $key = preg_replace('/[^a-z0-9_\-]/i', '', (string) $key);
+        if ($key === '') {
+            continue;
+        }
+        $cleanInputs[$key] = truncate_text((string) $value, 500);
+    }
+    if (!isset($cleanInputs['run_type']) || !in_array($cleanInputs['run_type'], ['daily', 'weekly', 'manual'], true)) {
+        $cleanInputs['run_type'] = 'daily';
+    }
+
     $body = json_encode([
         'ref' => 'main',
-        'inputs' => [
-            'run_type' => $runType,
-        ],
+        'inputs' => $cleanInputs,
     ], JSON_UNESCAPED_UNICODE);
 
     $url = 'https://api.github.com/repos/' . rawurlencode($config['github']['owner']) . '/' . rawurlencode($config['github']['repo'])
@@ -1172,6 +1531,11 @@ function trigger_github_discover(string $runType): array
     }
 
     return ['ok' => true];
+}
+
+function trigger_github_discover(string $runType): array
+{
+    return trigger_github_workflow(['run_type' => $runType]);
 }
 
 function upsert_project(array $item): int

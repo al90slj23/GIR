@@ -130,8 +130,8 @@ a:hover {
   align-items: center;
   gap: 10px;
   color: var(--ink);
-  font-size: 17px;
   font-weight: 750;
+  min-width: 0;
 }
 
 .brand::before {
@@ -148,6 +148,24 @@ a:hover {
 .brand:hover {
   color: var(--ink);
   text-decoration: none;
+}
+
+.brand-name {
+  color: var(--ink);
+  font-size: 17px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.brand-tagline {
+  overflow: hidden;
+  max-width: min(440px, 48vw);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 560;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .nav {
@@ -418,6 +436,12 @@ h2 {
   color: var(--gold);
 }
 
+.badge.red {
+  border-color: rgba(161, 58, 43, .2);
+  background: var(--red-soft);
+  color: var(--red);
+}
+
 .badge.muted {
   border-color: var(--line);
   background: var(--surface-strong);
@@ -436,6 +460,13 @@ h2 {
   margin-bottom: 8px;
 }
 
+.progress-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.28fr) minmax(340px, .72fr);
+  gap: 14px;
+  margin: 0 0 22px;
+}
+
 .progress-panel {
   position: relative;
   overflow: hidden;
@@ -444,7 +475,7 @@ h2 {
   background: var(--surface-card);
   box-shadow: var(--shadow-md);
   padding: 20px;
-  margin: -4px 0 22px;
+  margin: 0;
 }
 
 .search-entry-panel {
@@ -455,8 +486,8 @@ h2 {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface-card);
-  padding: 16px;
-  margin: 0 0 14px;
+  padding: 18px;
+  margin: 0 0 18px;
   box-shadow: var(--shadow-sm);
 }
 
@@ -511,6 +542,10 @@ h2 {
 .progress-panel h2 {
   margin: 0;
   font-size: 20px;
+}
+
+.progress-card.is-gir h2 {
+  font-size: 18px;
 }
 
 .progress-status {
@@ -580,6 +615,10 @@ h2 {
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
   margin-top: 14px;
+}
+
+.progress-card.is-gir .progress-timing {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .progress-timing span {
@@ -1073,6 +1112,12 @@ tr:last-child td {
   color: var(--red);
 }
 
+.notice.warning {
+  border-color: rgba(161, 98, 7, .22);
+  background: var(--gold-soft);
+  color: var(--gold);
+}
+
 .settings-list {
   display: grid;
   gap: 16px;
@@ -1203,6 +1248,21 @@ select {
     flex-direction: column;
   }
 
+  .brand {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .brand::before {
+    display: none;
+  }
+
+  .brand-tagline {
+    max-width: 100%;
+    white-space: normal;
+  }
+
   .wrap {
     padding: 28px 18px 48px;
   }
@@ -1229,6 +1289,10 @@ select {
 
   .progress-timing {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .progress-grid {
+    grid-template-columns: 1fr;
   }
 
   .platform-tabs {

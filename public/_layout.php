@@ -3,6 +3,7 @@ function render_header(string $title): void
 {
     global $config;
     $siteName = app_setting('site_name', $config['app']['name']);
+    $siteTagline = app_setting('site_tagline', app_setting('daily_subtitle', '每天发现值得研究和学习的 GitHub 灵感项目。'));
     $assetPath = rtrim((string) ($_SERVER['DOCUMENT_ROOT'] ?? ''), '/\\') . '/assets/app.css';
     if ($assetPath === '/assets/app.css' || !is_file($assetPath)) {
         $assetPath = __DIR__ . '/assets/app.css';
@@ -38,7 +39,10 @@ function render_header(string $title): void
 <body>
 <header class="topbar">
     <div class="topbar-inner">
-        <a class="brand" href="/index.php"><?= h($siteName) ?></a>
+        <a class="brand" href="/index.php">
+            <span class="brand-name"><?= h($siteName) ?></span>
+            <span class="brand-tagline"><?= h($siteTagline) ?></span>
+        </a>
         <nav class="nav">
             <a href="/admin/index.php"><?= h(app_setting('nav_admin_label', '后台')) ?></a>
             <a href="/rss.php">RSS</a>
@@ -56,6 +60,7 @@ function render_header(string $title): void
     </div>
 </header>
 <main class="wrap">
+<?php render_github_search_entry(isset($_GET['q']) ? (string) $_GET['q'] : ''); ?>
 <?php
 }
 
@@ -319,7 +324,7 @@ function render_github_search_entry(string $defaultQuery = ''): void
 <section class="search-entry-panel">
     <div>
         <h2>GitHub 搜索</h2>
-        <div class="muted">搜索入口已从主排行中拆出，用于按关键词查看项目库结果；后续抓取会进入独立搜索队列。</div>
+        <div class="muted">直接检索 GitHub 仓库；展示出来的项目会进入 GIR 项目库和解读队列。</div>
     </div>
     <form class="search-entry-form" action="/search.php" method="get">
         <input type="search" name="q" value="<?= h($defaultQuery) ?>" placeholder="搜索项目、主题、语言或用途">
@@ -393,42 +398,77 @@ function render_date_range_filter(string $basePath, string $activePlatform, stri
 function render_deepseek_progress_panel(): void
 {
     $progress = public_progress_summary();
-    $focus = $progress['focus'];
-    $percent = (float) ($focus['percent'] ?? 0);
-    $percentText = rtrim(rtrim(number_format($percent, 1, '.', ''), '0'), '.');
-    $active = !empty($progress['active']);
-    $platforms = $progress['platforms'];
-    $timing = $focus['timing'] ?? [];
+    $collection = $progress['collection'] ?? [];
+    $gir = $progress['gir'] ?? ($progress['focus'] ?? []);
+    $collectionPercent = (float) ($collection['percent'] ?? 0);
+    $girPercent = (float) ($gir['percent'] ?? 0);
+    $collectionPercentText = rtrim(rtrim(number_format($collectionPercent, 1, '.', ''), '0'), '.');
+    $girPercentText = rtrim(rtrim(number_format($girPercent, 1, '.', ''), '0'), '.');
+    $collectionTiming = $collection['timing'] ?? [];
+    $girTiming = $gir['timing'] ?? [];
     ?>
-<section class="progress-panel" data-progress-panel>
-    <div class="progress-panel-top">
-        <div>
-            <div class="progress-kicker">GIR 解读进度</div>
-            <h2 data-progress-title><?= h($focus['label']) ?> · <?= h($percentText) ?>%</h2>
+<section class="progress-grid" data-progress-panel>
+    <section class="progress-panel progress-card is-collection" data-progress-card="collection">
+        <div class="progress-panel-top">
+            <div>
+                <div class="progress-kicker">平台采集进度</div>
+                <h2 data-progress-title><?= h((string) ($collection['label'] ?? '平台采集入库')) ?> · <?= h($collectionPercentText) ?>%</h2>
+            </div>
+            <span class="progress-status <?= !empty($collection['active']) ? 'is-active' : 'is-idle' ?>" data-progress-status><?= h((string) ($collection['status_text'] ?? '最近更新')) ?></span>
         </div>
-        <span class="progress-status <?= $active ? 'is-active' : 'is-idle' ?>" data-progress-status><?= $active ? '正在更新' : '最近更新' ?></span>
-    </div>
-    <div class="progress-meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= h($percentText) ?>">
-        <span data-progress-bar style="width: <?= h($percentText) ?>%"></span>
-    </div>
-    <div class="progress-meta">
-        <span><strong data-progress-percent><?= h($percentText) ?>%</strong> 完成</span>
-        <span>已解读 <strong data-progress-analyzed><?= (int) ($focus['analyzed'] ?? 0) ?></strong></span>
-        <span>原始候选 <strong data-progress-raw><?= (int) ($focus['raw_rank'] ?? 0) ?></strong></span>
-        <span data-progress-date><?= h((string) ($progress['report_date'] ?: '-')) ?></span>
-    </div>
-    <div class="progress-timing">
-        <span><strong data-progress-elapsed><?= h((string) ($timing['elapsed_text'] ?? '计算中')) ?></strong><em>任务已运行</em></span>
-        <span><strong data-progress-rate><?= h((string) ($timing['rate_text'] ?? '计算中')) ?></strong><em>动态平均速度</em></span>
-        <span><strong data-progress-eta><?= h((string) ($timing['eta_text'] ?? '计算中')) ?></strong><em>预计剩余时长</em></span>
-        <span><strong data-progress-total><?= h((string) ($timing['estimated_total_text'] ?? '计算中')) ?></strong><em>预计总耗时</em></span>
-        <span><strong data-progress-finish><?= h((string) (($timing['estimated_finish_at'] ?? '') ?: '计算中')) ?></strong><em>预计完成时间</em></span>
-    </div>
-    <div class="progress-platforms" data-progress-platforms>
-        <?php foreach ($platforms as $platform): ?>
-            <span><?= h($platform['label']) ?> <?= (int) $platform['analyzed'] ?>/<?= (int) $platform['raw_rank'] ?></span>
-        <?php endforeach; ?>
-    </div>
+        <div class="progress-meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= h($collectionPercentText) ?>">
+            <span data-progress-bar style="width: <?= h($collectionPercentText) ?>%"></span>
+        </div>
+        <div class="progress-meta">
+            <span><strong data-progress-percent><?= h($collectionPercentText) ?>%</strong> 完成</span>
+            <span>已入库候选 <strong data-progress-primary><?= (int) ($collection['raw_rank'] ?? 0) ?></strong></span>
+            <span>本轮目标 <strong data-progress-secondary><?= (int) ($collection['target'] ?? 0) ?></strong></span>
+            <span>项目数 <strong data-progress-tertiary><?= (int) ($collection['projects'] ?? 0) ?></strong></span>
+            <span data-progress-date><?= h((string) (($collection['report_date'] ?? '') ?: '-')) ?></span>
+        </div>
+        <div class="progress-timing">
+            <span><strong data-progress-elapsed><?= h((string) ($collectionTiming['elapsed_text'] ?? '计算中')) ?></strong><em>任务已运行</em></span>
+            <span><strong data-progress-rate><?= h((string) ($collectionTiming['rate_text'] ?? '计算中')) ?></strong><em>动态入库速度</em></span>
+            <span><strong data-progress-eta><?= h((string) ($collectionTiming['eta_text'] ?? '计算中')) ?></strong><em>预计剩余时长</em></span>
+            <span><strong data-progress-total><?= h((string) ($collectionTiming['estimated_total_text'] ?? '计算中')) ?></strong><em>预计总耗时</em></span>
+            <span><strong data-progress-finish><?= h((string) (($collectionTiming['estimated_finish_at'] ?? '') ?: '计算中')) ?></strong><em>预计完成时间</em></span>
+        </div>
+        <div class="progress-platforms" data-progress-platforms>
+            <?php foreach (($collection['platforms'] ?? []) as $platform): ?>
+                <span><?= h($platform['label']) ?> <?= number_format((int) ($platform['raw_rank'] ?? 0)) ?></span>
+            <?php endforeach; ?>
+        </div>
+    </section>
+    <section class="progress-panel progress-card is-gir" data-progress-card="gir">
+        <div class="progress-panel-top">
+            <div>
+                <div class="progress-kicker">GIR 解读进度</div>
+                <h2 data-progress-title><?= h((string) ($gir['label'] ?? '全局 GIR 解读')) ?> · <?= h($girPercentText) ?>%</h2>
+            </div>
+            <span class="progress-status <?= !empty($gir['active']) ? 'is-active' : 'is-idle' ?>" data-progress-status><?= h((string) ($gir['status_text'] ?? '最近更新')) ?></span>
+        </div>
+        <div class="progress-meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= h($girPercentText) ?>">
+            <span data-progress-bar style="width: <?= h($girPercentText) ?>%"></span>
+        </div>
+        <div class="progress-meta">
+            <span><strong data-progress-percent><?= h($girPercentText) ?>%</strong> 完成</span>
+            <span>已解读 <strong data-progress-primary><?= (int) ($gir['analyzed'] ?? 0) ?></strong></span>
+            <span>项目库 <strong data-progress-secondary><?= (int) ($gir['raw_rank'] ?? 0) ?></strong></span>
+            <span>剩余 <strong data-progress-tertiary><?= (int) (($girTiming['remaining'] ?? 0)) ?></strong></span>
+        </div>
+        <div class="progress-timing">
+            <span><strong data-progress-elapsed><?= h((string) ($girTiming['elapsed_text'] ?? '计算中')) ?></strong><em>任务已运行</em></span>
+            <span><strong data-progress-rate><?= h((string) ($girTiming['rate_text'] ?? '计算中')) ?></strong><em>动态平均速度</em></span>
+            <span><strong data-progress-eta><?= h((string) ($girTiming['eta_text'] ?? '计算中')) ?></strong><em>预计剩余时长</em></span>
+            <span><strong data-progress-total><?= h((string) ($girTiming['estimated_total_text'] ?? '计算中')) ?></strong><em>预计总耗时</em></span>
+            <span><strong data-progress-finish><?= h((string) (($girTiming['estimated_finish_at'] ?? '') ?: '计算中')) ?></strong><em>预计完成时间</em></span>
+        </div>
+        <div class="progress-platforms" data-progress-platforms>
+            <?php foreach (($gir['platforms'] ?? []) as $platform): ?>
+                <span><?= h($platform['label']) ?> <?= number_format((int) ($platform['analyzed'] ?? 0)) ?>/<?= number_format((int) ($platform['raw_rank'] ?? 0)) ?></span>
+            <?php endforeach; ?>
+        </div>
+    </section>
 </section>
 <script>
 (function () {
@@ -459,54 +499,72 @@ function render_deepseek_progress_panel(): void
     });
   }
 
-  function renderPlatforms(platforms) {
-    var target = panel.querySelector('[data-progress-platforms]');
+  function renderPlatforms(card, platforms, mode) {
+    var target = card.querySelector('[data-progress-platforms]');
     if (!target) {
       return;
     }
     target.innerHTML = (platforms || []).map(function (item) {
-      return '<span>' + escapeHtml(item.label) + ' ' + formatNumber(item.analyzed) + '/' + formatNumber(item.raw_rank) + '</span>';
+      var value = mode === 'collection'
+        ? formatNumber(item.raw_rank)
+        : formatNumber(item.analyzed) + '/' + formatNumber(item.raw_rank);
+      return '<span>' + escapeHtml(item.label) + ' ' + value + '</span>';
     }).join('');
   }
 
-  function setText(selector, value) {
-    var target = panel.querySelector(selector);
+  function setText(card, selector, value) {
+    var target = card.querySelector(selector);
     if (target) {
       target.textContent = value || '计算中';
     }
   }
 
-  function renderProgress(payload) {
-    if (!payload || !payload.ok || !payload.focus) {
+  function renderCard(kind, data) {
+    var card = panel.querySelector('[data-progress-card="' + kind + '"]');
+    if (!card || !data) {
       return;
     }
-    var focus = payload.focus;
-    var percent = Math.max(0, Math.min(100, Number(focus.percent || 0)));
+    var percent = Math.max(0, Math.min(100, Number(data.percent || 0)));
     var percentText = formatPercent(percent);
-    var timing = focus.timing || {};
-    var status = panel.querySelector('[data-progress-status]');
-    var meter = panel.querySelector('[role="progressbar"]');
+    var timing = data.timing || {};
+    var status = card.querySelector('[data-progress-status]');
+    var meter = card.querySelector('[role="progressbar"]');
 
-    panel.querySelector('[data-progress-title]').textContent = (focus.label || '等待采集') + ' · ' + percentText + '%';
-    panel.querySelector('[data-progress-bar]').style.width = percentText + '%';
-    panel.querySelector('[data-progress-percent]').textContent = percentText + '%';
-    panel.querySelector('[data-progress-analyzed]').textContent = formatNumber(focus.analyzed);
-    panel.querySelector('[data-progress-raw]').textContent = formatNumber(focus.raw_rank);
-    panel.querySelector('[data-progress-date]').textContent = payload.report_date || '-';
-    setText('[data-progress-elapsed]', timing.elapsed_text);
-    setText('[data-progress-rate]', timing.rate_text);
-    setText('[data-progress-eta]', timing.eta_text);
-    setText('[data-progress-total]', timing.estimated_total_text);
-    setText('[data-progress-finish]', timing.estimated_finish_at);
+    card.querySelector('[data-progress-title]').textContent = (data.label || '等待更新') + ' · ' + percentText + '%';
+    card.querySelector('[data-progress-bar]').style.width = percentText + '%';
+    card.querySelector('[data-progress-percent]').textContent = percentText + '%';
+    if (kind === 'collection') {
+      card.querySelector('[data-progress-primary]').textContent = formatNumber(data.raw_rank);
+      card.querySelector('[data-progress-secondary]').textContent = formatNumber(data.target);
+      card.querySelector('[data-progress-tertiary]').textContent = formatNumber(data.projects);
+      setText(card, '[data-progress-date]', data.report_date || '-');
+    } else {
+      card.querySelector('[data-progress-primary]').textContent = formatNumber(data.analyzed);
+      card.querySelector('[data-progress-secondary]').textContent = formatNumber(data.raw_rank);
+      card.querySelector('[data-progress-tertiary]').textContent = formatNumber(timing.remaining);
+    }
+    setText(card, '[data-progress-elapsed]', timing.elapsed_text);
+    setText(card, '[data-progress-rate]', timing.rate_text);
+    setText(card, '[data-progress-eta]', timing.eta_text);
+    setText(card, '[data-progress-total]', timing.estimated_total_text);
+    setText(card, '[data-progress-finish]', timing.estimated_finish_at);
 
     if (meter) {
       meter.setAttribute('aria-valuenow', String(percent));
     }
     if (status) {
-      status.textContent = payload.active ? '正在更新' : '最近更新';
-      status.className = 'progress-status ' + (payload.active ? 'is-active' : 'is-idle');
+      status.textContent = data.status_text || (data.active ? '正在更新' : '最近更新');
+      status.className = 'progress-status ' + (data.active ? 'is-active' : 'is-idle');
     }
-    renderPlatforms(payload.platforms);
+    renderPlatforms(card, data.platforms, kind);
+  }
+
+  function renderProgress(payload) {
+    if (!payload || !payload.ok) {
+      return;
+    }
+    renderCard('collection', payload.collection);
+    renderCard('gir', payload.gir || payload.focus);
   }
 
   function loadProgress() {

@@ -135,6 +135,20 @@ CREATE TABLE IF NOT EXISTS platform_fetch_state (
   KEY idx_platform_fetch_due (next_fetch_at, platform)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
 
+CREATE TABLE IF NOT EXISTS github_search_requests (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  query_hash CHAR(40) NOT NULL,
+  query_text VARCHAR(500) NOT NULL,
+  status VARCHAR(24) NOT NULL DEFAULT 'dispatched',
+  last_error TEXT,
+  last_dispatched_at DATETIME DEFAULT NULL,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uniq_github_search_query (query_hash),
+  KEY idx_github_search_dispatched (last_dispatched_at)
+) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+
 CREATE TABLE IF NOT EXISTS app_settings (
   setting_key VARCHAR(64) NOT NULL,
   setting_value TEXT,
