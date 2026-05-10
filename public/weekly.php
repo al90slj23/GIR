@@ -17,6 +17,22 @@ if ($platform === '') {
 }
 $tag = isset($_GET['tag']) ? truncate_text((string) $_GET['tag'], 64) : '';
 $tags = available_ranking_tags_by_range('weekly', $platform, $dateRange);
+$tagValues = array_map(static function (array $row): string {
+    return (string) ($row['source_tag'] ?? '');
+}, $tags);
+if ($tag !== '' && !in_array($tag, $tagValues, true)) {
+    $tag = '';
+}
+$activePlatformRangeTotal = raw_rank_count_by_range('weekly', $dateRange, $platform);
+$activePlatformSelectedTotal = raw_rank_count_by_range('weekly', $dateRange, $platform, $tag);
+$activePlatformFullTotal = raw_rank_count_all('weekly', $platform);
+foreach ($platforms as $index => $row) {
+    if ((string) ($row['source_platform'] ?? '') === $platform) {
+        $platforms[$index]['total'] = $activePlatformSelectedTotal;
+        $platforms[$index]['full_total'] = $activePlatformFullTotal;
+        break;
+    }
+}
 $reports = $view === 'github'
     ? github_rank_reports_by_range('weekly', $dateRange, 40, $platform, $tag)
     : reports_by_range('weekly', $dateRange, 40, $platform, $tag);
@@ -32,9 +48,9 @@ render_header($pageTitle);
 </div>
 
 <?php render_platform_tabs('/weekly.php', $platforms, $platform, $view, $dateRange, $tag); ?>
-<?php render_tag_tabs('/weekly.php', $tags, $tag, $platform, $view, $dateRange); ?>
-<?php render_rank_tabs('/weekly.php', $view, $dateRange, $platform, $tag); ?>
+<?php render_tag_tabs('/weekly.php', $tags, $tag, $platform, $view, $dateRange, $activePlatformRangeTotal, $activePlatformFullTotal); ?>
 <?php render_date_range_filter('/weekly.php', $platform, $tag, $view, $dateRange); ?>
+<?php render_rank_tabs('/weekly.php', $view, $dateRange, $platform, $tag); ?>
 
 <?php if (!$reports): ?>
     <div class="empty"><?= h(app_setting('weekly_empty_text', '还没有周榜数据。')) ?></div>

@@ -138,6 +138,14 @@ function ranking_query_params(string $platform, string $tag, string $view, array
     return array_filter($params, 'strlen');
 }
 
+function ranking_count_label(int $current, int $full): string
+{
+    if ($full > 0 && $current !== $full) {
+        return number_format($current) . ' / ' . number_format($full);
+    }
+    return number_format($current);
+}
+
 function render_rank_tabs(string $basePath, string $activeView, array $dateRange, string $platform = '', string $tag = ''): void
 {
     $githubQuery = http_build_query(ranking_query_params($platform, $tag, 'github', $dateRange));
@@ -160,19 +168,26 @@ function render_platform_tabs(string $basePath, array $platforms, string $active
     <?php foreach ($platforms as $platform): ?>
         <?php
         $value = (string) $platform['source_platform'];
-        $query = http_build_query(ranking_query_params($value, $tag, $activeView, $dateRange));
-        $classes = trim(($activePlatform === $value ? 'active ' : '') . ($value === 'backfill' ? 'is-backfill' : ''));
+        $currentTotal = (int) ($platform['total'] ?? 0);
+        $fullTotal = (int) ($platform['full_total'] ?? $currentTotal);
+        $query = http_build_query(ranking_query_params($value, '', $activeView, $dateRange));
+        $classes = trim(($activePlatform === $value ? 'active ' : '') . ($value === 'backfill' ? 'is-backfill ' : '') . ($fullTotal > 0 && $currentTotal !== $fullTotal ? 'is-filtered' : ''));
         ?>
         <a class="<?= h($classes) ?>" href="<?= h($basePath) ?>?<?= h($query) ?>">
             <span class="platform-tab-name"><?= h(ranking_platform_label($value)) ?></span>
-            <span class="platform-tab-count"><?= number_format((int) $platform['total']) ?></span>
+            <span class="platform-tab-count">
+                <strong><?= number_format($currentTotal) ?></strong>
+                <?php if ($fullTotal > 0 && $currentTotal !== $fullTotal): ?>
+                    <em>/ <?= number_format($fullTotal) ?></em>
+                <?php endif; ?>
+            </span>
         </a>
     <?php endforeach; ?>
 </div>
 <?php
 }
 
-function render_tag_tabs(string $basePath, array $tags, string $activeTag, string $activePlatform, string $activeView, array $dateRange): void
+function render_tag_tabs(string $basePath, array $tags, string $activeTag, string $activePlatform, string $activeView, array $dateRange, int $platformRangeTotal, int $platformFullTotal): void
 {
     if (!$tags) {
         return;
@@ -180,14 +195,20 @@ function render_tag_tabs(string $basePath, array $tags, string $activeTag, strin
     $allQuery = http_build_query(ranking_query_params($activePlatform, '', $activeView, $dateRange));
     ?>
 <div class="tabs tag-tabs">
-    <a class="<?= $activeTag === '' ? 'active' : '' ?>" href="<?= h($basePath) ?>?<?= h($allQuery) ?>">全部分类</a>
+    <a class="<?= $activeTag === '' ? 'active' : '' ?>" href="<?= h($basePath) ?>?<?= h($allQuery) ?>">
+        <span>全部</span>
+        <strong><?= h(ranking_count_label($platformRangeTotal, $platformFullTotal)) ?></strong>
+    </a>
     <?php foreach ($tags as $tag): ?>
         <?php
         $value = (string) $tag['source_tag'];
+        $currentTotal = (int) ($tag['total'] ?? 0);
+        $fullTotal = (int) ($tag['full_total'] ?? $currentTotal);
         $query = http_build_query(ranking_query_params($activePlatform, $value, $activeView, $dateRange));
         ?>
         <a class="<?= $activeTag === $value ? 'active' : '' ?>" href="<?= h($basePath) ?>?<?= h($query) ?>">
-            <?= h(ranking_tag_label($value)) ?> · <?= (int) $tag['total'] ?>
+            <span><?= h(ranking_tag_label($value)) ?></span>
+            <strong><?= h(ranking_count_label($currentTotal, $fullTotal)) ?></strong>
         </a>
     <?php endforeach; ?>
 </div>
@@ -205,23 +226,23 @@ function render_date_range_filter(string $basePath, string $activePlatform, stri
             <?php $query = http_build_query(ranking_query_params($activePlatform, $activeTag, $activeView, report_date_range($value))); ?>
             <a class="<?= $dateRange['range'] === $value ? 'active' : '' ?>" href="<?= h($basePath) ?>?<?= h($query) ?>"><?= h($label) ?></a>
         <?php endforeach; ?>
+        <form class="date-custom-form <?= $dateRange['range'] === 'custom' ? 'active' : '' ?>" method="get" action="<?= h($basePath) ?>">
+            <input type="hidden" name="platform" value="<?= h($activePlatform) ?>">
+            <input type="hidden" name="tag" value="<?= h($activeTag) ?>">
+            <input type="hidden" name="view" value="<?= h($activeView) ?>">
+            <input type="hidden" name="range" value="custom">
+            <label>
+                <span>自定义</span>
+                <input type="date" name="start_date" value="<?= h((string) $dateRange['start']) ?>">
+            </label>
+            <span class="date-separator">至</span>
+            <label>
+                <span>结束</span>
+                <input type="date" name="end_date" value="<?= h((string) $dateRange['end']) ?>">
+            </label>
+            <button class="button secondary" type="submit">筛选</button>
+        </form>
     </div>
-    <form class="date-custom-form" method="get" action="<?= h($basePath) ?>">
-        <input type="hidden" name="platform" value="<?= h($activePlatform) ?>">
-        <input type="hidden" name="tag" value="<?= h($activeTag) ?>">
-        <input type="hidden" name="view" value="<?= h($activeView) ?>">
-        <input type="hidden" name="range" value="custom">
-        <label>
-            <span>自定义时间</span>
-            <input type="date" name="start_date" value="<?= h((string) $dateRange['start']) ?>">
-        </label>
-        <span class="date-separator">至</span>
-        <label>
-            <span>结束</span>
-            <input type="date" name="end_date" value="<?= h((string) $dateRange['end']) ?>">
-        </label>
-        <button class="button secondary" type="submit">筛选</button>
-    </form>
 </div>
 <?php
 }

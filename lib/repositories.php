@@ -157,7 +157,6 @@ function report_date_range_options(): array
 {
     return [
         'today' => '今天',
-        'yesterday' => '昨天',
         '3d' => '最近三天',
         '7d' => '最近一周',
         '30d' => '最近一月',
@@ -250,6 +249,35 @@ function ranking_platform_order_sql(string $column = 'source_platform'): string
     END";
 }
 
+function merge_full_totals(array $rows, array $fullRows, string $key = 'source_platform'): array
+{
+    $currentRows = [];
+    foreach ($rows as $row) {
+        $currentRows[(string) ($row[$key] ?? '')] = $row;
+    }
+
+    $merged = [];
+    foreach ($fullRows as $fullRow) {
+        $value = (string) ($fullRow[$key] ?? '');
+        $row = $currentRows[$value] ?? $fullRow;
+        $row['total'] = isset($currentRows[$value]) ? (int) ($currentRows[$value]['total'] ?? 0) : 0;
+        $row['full_total'] = (int) ($fullRow['total'] ?? 0);
+        $merged[] = $row;
+        unset($currentRows[$value]);
+    }
+
+    foreach ($currentRows as $row) {
+        $value = (string) ($row[$key] ?? '');
+        if ($value === '') {
+            continue;
+        }
+        $row['full_total'] = (int) ($row['total'] ?? 0);
+        $merged[] = $row;
+    }
+
+    return $merged;
+}
+
 function raw_rank_analysis_select_sql(): string
 {
     return ', ar.one_sentence AS analysis_one_sentence,
@@ -278,7 +306,7 @@ function raw_rank_analysis_join_sql(): string
 function available_ranking_platforms(string $periodType, string $date = ''): array
 {
     $dateFilter = report_date_filter_sql($periodType, $date);
-    return db_all(
+    $rows = db_all(
         'SELECT r.source_platform, COUNT(*) AS total
          FROM project_reports r
          INNER JOIN projects p ON p.id = r.project_id
@@ -287,12 +315,13 @@ function available_ranking_platforms(string $periodType, string $date = ''): arr
          ORDER BY ' . ranking_platform_order_sql('source_platform') . ', total DESC, r.source_platform ASC',
         array_merge([$periodType], $dateFilter['params'])
     );
+    return merge_full_totals($rows, all_ranking_platform_totals($periodType), 'source_platform');
 }
 
 function available_ranking_platforms_by_range(string $periodType, array $dateRange): array
 {
     $dateFilter = report_date_range_filter_sql($dateRange);
-    return db_all(
+    $rows = db_all(
         'SELECT r.source_platform, COUNT(*) AS total
          FROM project_reports r
          INNER JOIN projects p ON p.id = r.project_id
@@ -300,13 +329,27 @@ function available_ranking_platforms_by_range(string $periodType, array $dateRan
          GROUP BY r.source_platform
          ORDER BY ' . ranking_platform_order_sql('source_platform') . ', total DESC, r.source_platform ASC',
         array_merge([$periodType], $dateFilter['params'])
+    );
+    return merge_full_totals($rows, all_ranking_platform_totals($periodType), 'source_platform');
+}
+
+function all_ranking_platform_totals(string $periodType): array
+{
+    return db_all(
+        'SELECT r.source_platform, COUNT(*) AS total
+         FROM project_reports r
+         INNER JOIN projects p ON p.id = r.project_id
+         WHERE r.period_type = ? AND p.is_hidden = 0' . raw_rank_report_sql() . '
+         GROUP BY r.source_platform
+         ORDER BY ' . ranking_platform_order_sql('source_platform') . ', total DESC, r.source_platform ASC',
+        [$periodType]
     );
 }
 
 function available_ranking_tags(string $periodType, string $platform, string $date = ''): array
 {
     $dateFilter = report_date_filter_sql($periodType, $date);
-    return db_all(
+    $rows = db_all(
         'SELECT r.source_tag, COUNT(*) AS total
          FROM project_reports r
          INNER JOIN projects p ON p.id = r.project_id
@@ -315,12 +358,13 @@ function available_ranking_tags(string $periodType, string $platform, string $da
          ORDER BY total DESC, r.source_tag ASC',
         array_merge([$periodType, $platform], $dateFilter['params'])
     );
+    return merge_full_totals($rows, all_ranking_tag_totals($periodType, $platform), 'source_tag');
 }
 
 function available_ranking_tags_by_range(string $periodType, string $platform, array $dateRange): array
 {
     $dateFilter = report_date_range_filter_sql($dateRange);
-    return db_all(
+    $rows = db_all(
         'SELECT r.source_tag, COUNT(*) AS total
          FROM project_reports r
          INNER JOIN projects p ON p.id = r.project_id
@@ -329,6 +373,47 @@ function available_ranking_tags_by_range(string $periodType, string $platform, a
          ORDER BY total DESC, r.source_tag ASC',
         array_merge([$periodType, $platform], $dateFilter['params'])
     );
+    return merge_full_totals($rows, all_ranking_tag_totals($periodType, $platform), 'source_tag');
+}
+
+function all_ranking_tag_totals(string $periodType, string $platform): array
+{
+    return db_all(
+        'SELECT r.source_tag, COUNT(*) AS total
+         FROM project_reports r
+         INNER JOIN projects p ON p.id = r.project_id
+         WHERE r.period_type = ? AND r.source_platform = ? AND p.is_hidden = 0' . raw_rank_report_sql() . '
+         GROUP BY r.source_tag
+         ORDER BY total DESC, r.source_tag ASC',
+        [$periodType, $platform]
+    );
+}
+
+function raw_rank_count_by_range(string $periodType, array $dateRange, string $platform = '', string $tag = ''): int
+{
+    $filters = report_source_filter($platform, $tag);
+    $dateFilter = report_date_range_filter_sql($dateRange);
+    $row = db_one(
+        'SELECT COUNT(*) AS total
+         FROM project_reports r
+         INNER JOIN projects p ON p.id = r.project_id
+         WHERE r.period_type = ? AND p.is_hidden = 0' . raw_rank_report_sql() . $dateFilter['sql'] . $filters['sql'],
+        array_merge([$periodType], $dateFilter['params'], $filters['params'])
+    );
+    return (int) ($row['total'] ?? 0);
+}
+
+function raw_rank_count_all(string $periodType, string $platform = '', string $tag = ''): int
+{
+    $filters = report_source_filter($platform, $tag);
+    $row = db_one(
+        'SELECT COUNT(*) AS total
+         FROM project_reports r
+         INNER JOIN projects p ON p.id = r.project_id
+         WHERE r.period_type = ? AND p.is_hidden = 0' . raw_rank_report_sql() . $filters['sql'],
+        array_merge([$periodType], $filters['params'])
+    );
+    return (int) ($row['total'] ?? 0);
 }
 
 function latest_reports(string $periodType, int $limit = 20, string $platform = '', string $tag = ''): array

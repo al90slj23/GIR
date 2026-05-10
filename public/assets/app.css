@@ -642,9 +642,9 @@ h2 {
 
 .platform-tabs {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(156px, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 10px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .platform-tabs a {
@@ -654,10 +654,11 @@ h2 {
   flex-direction: column;
   gap: 10px;
   border-radius: var(--radius-sm);
-  min-height: 68px;
-  padding: 13px 14px;
+  min-height: 64px;
+  padding: 12px;
   background: rgba(255, 253, 248, .9);
   box-shadow: none;
+  white-space: normal;
 }
 
 .platform-tabs a:hover {
@@ -679,9 +680,29 @@ h2 {
 
 .platform-tab-count {
   color: var(--ink);
-  font-size: 23px;
+  font-size: 22px;
   font-weight: 850;
   line-height: 1;
+}
+
+.platform-tab-count strong,
+.platform-tab-count em {
+  font-style: normal;
+}
+
+.platform-tab-count em {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 720;
+}
+
+.platform-tabs a.is-filtered {
+  border-color: rgba(161, 98, 7, .28);
+  background: rgba(246, 234, 208, .44);
+}
+
+.platform-tabs a.is-filtered .platform-tab-count em {
+  color: var(--gold);
 }
 
 .platform-tabs a.active {
@@ -706,25 +727,62 @@ h2 {
 }
 
 .tag-tabs {
+  gap: 8px;
   margin-bottom: 10px;
 }
 
+.tag-tabs a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  background: rgba(249, 247, 241, .72);
+  box-shadow: none;
+}
+
+.tag-tabs a strong {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.tag-tabs a.active strong {
+  color: rgba(255, 253, 248, .84);
+}
+
 .date-filter {
-  display: grid;
-  gap: 10px;
-  margin: 12px 0 24px;
+  margin: 8px 0 14px;
+}
+
+.date-tabs {
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 0;
+}
+
+.date-tabs a {
+  padding: 7px 10px;
+  background: rgba(255, 253, 248, .64);
+  box-shadow: none;
+  font-size: 13px;
 }
 
 .date-custom-form {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 9px;
+  gap: 8px;
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: rgba(255, 253, 248, .72);
-  padding: 12px;
-  box-shadow: var(--shadow-sm);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 253, 248, .64);
+  padding: 7px 9px;
+  box-shadow: none;
+}
+
+.date-custom-form.active {
+  border-color: rgba(15, 118, 110, .36);
+  background: var(--accent-soft);
 }
 
 .date-custom-form label {
@@ -990,6 +1048,10 @@ select {
   }
 
   .progress-timing {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .platform-tabs {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
