@@ -728,6 +728,16 @@ h2 {
   white-space: nowrap;
 }
 
+.progress-next > div:first-child > strong {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.progress-countdown strong {
+  white-space: nowrap;
+}
+
 .progress-next span,
 .progress-stat-grid em {
   margin-top: 4px;

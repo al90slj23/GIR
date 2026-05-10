@@ -996,7 +996,7 @@ function progress_next_schedule(string $kind): array
     $useWeekly = $weekly !== false && $weekly < $daily;
     $timestamp = $useWeekly ? (int) $weekly : (int) $daily;
     $baseLabel = $useWeekly ? '每周自动采集' : '每日自动采集';
-    $label = $kind === 'gir' ? '随下一次自动采集触发 GIR 解读' : $baseLabel;
+    $label = $kind === 'gir' ? '下一次 GIR 解读' : $baseLabel;
     $seconds = max(0, $timestamp - $now);
 
     return [
