@@ -1048,7 +1048,7 @@ function progress_run_history_stats(string $kind): array
                 ['label' => '自动周期批次', 'value' => number_format((int) ($runStats['auto_runs'] ?? 0))],
                 ['label' => '手动/搜索批次', 'value' => number_format((int) ($runStats['manual_runs'] ?? 0))],
                 ['label' => '解读时间跨度', 'value' => progress_span_text($reportStats['first_at'] ?? null, $reportStats['latest_at'] ?? null)],
-                ['label' => '最近解读', 'value' => (string) (($reportStats['latest_at'] ?? '') ?: '-')],
+                ['label' => '最近解读', 'value' => (string) (($reportStats['latest_at'] ?? '') ?: '-'), 'wide' => true],
             ],
         ];
     }
@@ -1080,7 +1080,7 @@ function progress_run_history_stats(string $kind): array
             ['label' => '自动周期批次', 'value' => number_format((int) ($runStats['auto_runs'] ?? 0))],
             ['label' => '手动/搜索批次', 'value' => number_format((int) ($runStats['manual_runs'] ?? 0))],
             ['label' => '采集时间跨度', 'value' => progress_span_text($reportStats['first_at'] ?? null, $reportStats['latest_at'] ?? null)],
-            ['label' => '最近入库', 'value' => (string) (($reportStats['latest_at'] ?? '') ?: '-')],
+            ['label' => '最近入库', 'value' => (string) (($reportStats['latest_at'] ?? '') ?: '-'), 'wide' => true],
         ],
     ];
 }

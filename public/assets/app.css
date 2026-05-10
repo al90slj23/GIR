@@ -792,6 +792,10 @@ h2 {
   min-width: 0;
 }
 
+.progress-stat-grid span.is-wide {
+  grid-column: 1 / -1;
+}
+
 .progress-platforms {
   margin-top: 12px;
 }

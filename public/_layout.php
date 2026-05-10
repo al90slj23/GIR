@@ -445,7 +445,7 @@ function render_progress_card_body(string $kind, array $data): void
 <div class="progress-section-title"><?= h((string) (($history['label'] ?? '') ?: ($isCollection ? '累计采集统计' : '累计解读统计'))) ?></div>
 <div class="progress-stat-grid">
     <?php foreach (($history['stats'] ?? []) as $stat): ?>
-        <span><strong><?= h((string) ($stat['value'] ?? '-')) ?></strong><em><?= h((string) ($stat['label'] ?? '')) ?></em></span>
+        <span class="<?= !empty($stat['wide']) ? 'is-wide' : '' ?>"><strong><?= h((string) ($stat['value'] ?? '-')) ?></strong><em><?= h((string) ($stat['label'] ?? '')) ?></em></span>
     <?php endforeach; ?>
 </div>
 <div class="progress-platforms" data-progress-platforms>
@@ -611,7 +611,7 @@ function render_deepseek_progress_panel(): void
     return '<div class="progress-section-title">' + escapeHtml(title) + '</div>'
       + '<div class="progress-stat-grid">'
       + stats.map(function (stat) {
-          return '<span><strong>' + escapeHtml(stat.value || '-') + '</strong><em>' + escapeHtml(stat.label || '') + '</em></span>';
+          return '<span class="' + (stat && stat.wide ? 'is-wide' : '') + '"><strong>' + escapeHtml(stat.value || '-') + '</strong><em>' + escapeHtml(stat.label || '') + '</em></span>';
         }).join('')
       + '</div>';
   }
