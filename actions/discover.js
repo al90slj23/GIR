@@ -1,7 +1,10 @@
 const backfillMode = ["1", "true", "yes", "on"].includes(String(process.env.BACKFILL_EXISTING || "").toLowerCase());
+const backlogPendingOnly = ["1", "true", "yes", "on"].includes(String(process.env.BACKLOG_PENDING_ONLY || "").toLowerCase());
 const resetAnalyses = ["1", "true", "yes", "on"].includes(String(process.env.RESET_ANALYSES || "").toLowerCase());
 const runType = process.env.RUN_TYPE || process.argv[2] || "daily";
-const periodType = backfillMode ? "daily" : (runType === "weekly" ? "weekly" : runType === "manual" ? "manual" : "daily");
+const periodType = backfillMode
+  ? (backlogPendingOnly ? "manual" : "daily")
+  : (runType === "weekly" ? "weekly" : (runType === "manual" || runType === "backlog") ? "manual" : "daily");
 const ingestBatchSize = Math.max(1, Number(process.env.INGEST_BATCH_SIZE || "1"));
 const rawIngestBatchSize = Math.max(1, Number(process.env.RAW_INGEST_BATCH_SIZE || "50"));
 const analysisIngestBatchSize = Math.max(1, Number(process.env.ANALYSIS_INGEST_BATCH_SIZE || "20"));
@@ -37,6 +40,8 @@ for (const [key, value] of Object.entries(env)) {
 }
 
 const defaultConfig = {
+  backlog_enabled: true,
+  backlog_batch_size: 40,
   analyze_all: true,
   max_projects: Number(process.env.MAX_PROJECTS || "10"),
   per_page: 20,
@@ -235,6 +240,8 @@ async function loadDiscoverConfig() {
     return {
       daily_enabled: config.daily_enabled !== false,
       weekly_enabled: config.weekly_enabled !== false,
+      backlog_enabled: config.backlog_enabled !== false,
+      backlog_batch_size: clampNumber(config.backlog_batch_size, defaultConfig.backlog_batch_size, 1, 200),
       analyze_all: config.analyze_all !== false,
       max_projects: clampNumber(config.max_projects, defaultConfig.max_projects, 1, 50),
       per_page: clampNumber(config.per_page, defaultConfig.per_page, 1, 100),
@@ -918,6 +925,9 @@ async function fetchBackfillProjectsPage(offset, limit) {
   const url = new URL(baseUrl);
   url.searchParams.set("offset", String(offset));
   url.searchParams.set("limit", String(limit));
+  if (backlogPendingOnly) {
+    url.searchParams.set("pending_only", "1");
+  }
   const res = await fetchWithTimeout(url.toString(), {
     headers: {
       "Accept": "application/json",
@@ -931,14 +941,25 @@ async function fetchBackfillProjectsPage(offset, limit) {
   return res.json();
 }
 
-async function loadBackfillProjects() {
+function resolvedBackfillLimit(config) {
+  if (backfillLimit > 0) {
+    return backfillLimit;
+  }
+  if (backlogPendingOnly) {
+    return Math.max(1, Number(config.backlog_batch_size || defaultConfig.backlog_batch_size));
+  }
+  return 0;
+}
+
+async function loadBackfillProjects(config) {
   const projects = [];
   let offset = backfillOffset;
   let total = null;
+  const effectiveLimit = resolvedBackfillLimit(config);
   while (true) {
-    if (backfillLimit > 0 && projects.length >= backfillLimit) break;
-    const pageLimit = backfillLimit > 0
-      ? Math.min(backfillFetchBatchSize, backfillLimit - projects.length)
+    if (effectiveLimit > 0 && projects.length >= effectiveLimit) break;
+    const pageLimit = effectiveLimit > 0
+      ? Math.min(backfillFetchBatchSize, effectiveLimit - projects.length)
       : backfillFetchBatchSize;
     const data = await fetchBackfillProjectsPage(offset, pageLimit);
     const pageProjects = Array.isArray(data.projects) ? data.projects : [];
@@ -952,18 +973,24 @@ async function loadBackfillProjects() {
 }
 
 async function runBackfill(config) {
-  console.log(`Backfill config: reset=${resetAnalyses}, offset=${backfillOffset}, limit=${backfillLimit || "all"}, report_date=${today}`);
+  console.log(`Backfill config: reset=${resetAnalyses}, offset=${backfillOffset}, limit=${resolvedBackfillLimit(config) || "all"}, pending_only=${backlogPendingOnly}, report_date=${today}`);
   if (resetAnalyses) {
     await resetAnalysesOnHost();
   }
 
-  const repos = await loadBackfillProjects();
+  const repos = await loadBackfillProjects(config);
   if (!repos.length) {
+    if (backlogPendingOnly) {
+      console.log("Backlog clear: no pending projects");
+      return;
+    }
     throw new Error("No projects loaded for backfill");
   }
 
-  console.log(`Ingesting backfill raw candidates: ${repos.length}`);
-  await ingest(repos.map((repo) => projectPayload(repo, { raw_rank_only: true })), rawIngestBatchSize);
+  if (!backlogPendingOnly) {
+    console.log(`Ingesting backfill raw candidates: ${repos.length}`);
+    await ingest(repos.map((repo) => projectPayload(repo, { raw_rank_only: true })), rawIngestBatchSize);
+  }
 
   let analyzedCount = 0;
   let analyzedBatch = [];
@@ -1080,8 +1107,12 @@ function projectPayload(repo, analysis) {
 
 async function main() {
   const config = applyDynamicSearchConfig(applySeedConfig(applyRuntimeOverrides(await loadDiscoverConfig())));
-  console.log(`Discover config: mode=${backfillMode ? "backfill" : (seedMode ? "seed" : "normal")}, max=${config.max_projects}, per_page=${config.per_page}, platforms=${config.platforms.join(",")}, topics=${config.topics.join(",")}, extra_queries=${config.extra_queries.length}, report_date=${today}`);
+  console.log(`Discover config: mode=${backfillMode ? (backlogPendingOnly ? "backlog" : "backfill") : (seedMode ? "seed" : "normal")}, max=${config.max_projects}, per_page=${config.per_page}, platforms=${config.platforms.join(",")}, topics=${config.topics.join(",")}, extra_queries=${config.extra_queries.length}, report_date=${today}`);
   if (backfillMode) {
+    if (backlogPendingOnly && config.backlog_enabled === false) {
+      console.log("Backlog auto-run disabled by config; skipping");
+      return;
+    }
     await runBackfill(config);
     return;
   }

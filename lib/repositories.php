@@ -977,9 +977,25 @@ function run_recent_seconds(?array $latestRunRow): int
     return $latestRunTimestamp > 0 ? time() - $latestRunTimestamp : 999999;
 }
 
-function progress_next_schedule(string $kind): array
+function progress_next_schedule(string $kind, bool $preferBacklog = false): array
 {
     $now = time();
+    if ($kind === 'gir' && $preferBacklog && discover_bool_setting('discover_backlog_enabled', true)) {
+        $minute = (int) date('i', $now);
+        $nextMinute = ((int) floor($minute / 15) + 1) * 15;
+        $timestamp = $nextMinute >= 60
+            ? strtotime(date('Y-m-d H:00:00', strtotime('+1 hour', $now)))
+            : strtotime(date('Y-m-d H:', $now) . str_pad((string) $nextMinute, 2, '0', STR_PAD_LEFT) . ':00');
+        $timestamp = $timestamp ?: strtotime('+15 minutes', $now);
+        $seconds = max(0, $timestamp - $now);
+        return [
+            'label' => '每 15 分钟自动补跑',
+            'at' => date('Y-m-d H:i:s', $timestamp),
+            'remaining_seconds' => $seconds,
+            'remaining_text' => progress_duration_precise_text($seconds),
+        ];
+    }
+
     $today = date('Y-m-d');
     $daily = strtotime($today . ' 09:00:00');
     if ($daily !== false && $daily <= $now) {
@@ -1022,7 +1038,7 @@ function progress_run_history_stats(string $kind): array
     if ($kind === 'gir') {
         $runStats = db_one(
             'SELECT COUNT(*) AS total_runs,
-                    SUM(CASE WHEN run_type IN ("daily", "weekly") THEN 1 ELSE 0 END) AS auto_runs,
+                    SUM(CASE WHEN run_type IN ("daily", "weekly", "backlog") THEN 1 ELSE 0 END) AS auto_runs,
                     SUM(CASE WHEN run_type = "manual" THEN 1 ELSE 0 END) AS manual_runs,
                     SUM(total_analyzed) AS total_analyzed,
                     SUM(CASE WHEN finished_at IS NOT NULL THEN TIMESTAMPDIFF(SECOND, started_at, finished_at) ELSE 0 END) AS total_seconds,
@@ -1060,7 +1076,8 @@ function progress_run_history_stats(string $kind): array
                 SUM(total_found) AS total_found,
                 SUM(CASE WHEN finished_at IS NOT NULL THEN TIMESTAMPDIFF(SECOND, started_at, finished_at) ELSE 0 END) AS total_seconds,
                 MAX(COALESCE(finished_at, updated_at, started_at)) AS latest_finished_at
-         FROM runs'
+         FROM runs
+         WHERE total_found > 0 AND total_analyzed = 0'
     );
     $reportStats = db_one(
         'SELECT COUNT(*) AS raw_reports,
@@ -1233,7 +1250,7 @@ function public_gir_progress_summary(?array $latestRunRow): array
         'mode' => $active ? 'running' : 'idle',
         'status_text' => $active ? '正在解读' : ($remaining > 0 ? '剩余待解读' : '等待新增'),
         'timing' => progress_timing($timingRow, $total, $analyzed),
-        'next_schedule' => progress_next_schedule('gir'),
+        'next_schedule' => progress_next_schedule('gir', $remaining > 0),
         'history' => progress_run_history_stats('gir'),
         'platforms' => $platforms,
     ];
@@ -1241,9 +1258,20 @@ function public_gir_progress_summary(?array $latestRunRow): array
 
 function public_progress_summary(): array
 {
-    $latestRunRow = db_one('SELECT * FROM runs ORDER BY started_at DESC, id DESC LIMIT 1');
-    $collection = public_collection_progress_summary($latestRunRow);
-    $gir = public_gir_progress_summary($latestRunRow);
+    $latestCollectionRunRow = db_one(
+        'SELECT * FROM runs
+         WHERE total_found > 0 AND total_analyzed = 0
+         ORDER BY started_at DESC, id DESC
+         LIMIT 1'
+    );
+    $latestGirRunRow = db_one(
+        'SELECT * FROM runs
+         WHERE total_analyzed > 0
+         ORDER BY started_at DESC, id DESC
+         LIMIT 1'
+    );
+    $collection = public_collection_progress_summary($latestCollectionRunRow);
+    $gir = public_gir_progress_summary($latestGirRunRow);
     $active = !empty($collection['active']) || !empty($gir['active']);
 
     return [
@@ -1254,7 +1282,7 @@ function public_progress_summary(): array
         'platforms' => $gir['platforms'],
         'collection' => $collection,
         'gir' => $gir,
-        'latest_run' => latest_run_summary($latestRunRow),
+        'latest_run' => latest_run_summary($latestGirRunRow ?: $latestCollectionRunRow),
     ];
 }
 
@@ -1348,22 +1376,44 @@ function update_project_admin(int $projectId, string $status, bool $hidden, stri
     );
 }
 
-function backfill_project_count(): int
+function backfill_project_count(bool $pendingOnly = false): int
 {
-    $row = db_one('SELECT COUNT(*) AS total FROM projects WHERE is_hidden = 0');
+    $sql = 'SELECT COUNT(*) AS total
+            FROM projects p
+            WHERE p.is_hidden = 0';
+    if ($pendingOnly) {
+        $sql .= " AND NOT EXISTS (
+            SELECT 1
+            FROM project_reports r
+            WHERE r.project_id = p.id
+              AND r.raw_rank_only = 0
+              AND r.one_sentence <> ''
+        )";
+    }
+    $row = db_one($sql);
     return (int) ($row['total'] ?? 0);
 }
 
-function backfill_projects(int $offset, int $limit): array
+function backfill_projects(int $offset, int $limit, bool $pendingOnly = false): array
 {
     $offset = max(0, $offset);
     $limit = max(1, min(200, $limit));
-    $rows = db_all(
-        'SELECT * FROM projects
-         WHERE is_hidden = 0
-         ORDER BY stars DESC, forks DESC, id ASC
-         LIMIT ' . $offset . ', ' . $limit
-    );
+    $sql = 'SELECT p.*
+            FROM projects p
+            WHERE p.is_hidden = 0';
+    if ($pendingOnly) {
+        $sql .= " AND NOT EXISTS (
+            SELECT 1
+            FROM project_reports r
+            WHERE r.project_id = p.id
+              AND r.raw_rank_only = 0
+              AND r.one_sentence <> ''
+        )";
+    }
+    $sql .= '
+         ORDER BY p.stars DESC, p.forks DESC, p.id ASC
+         LIMIT ' . $offset . ', ' . $limit;
+    $rows = db_all($sql);
 
     $projects = [];
     foreach ($rows as $index => $row) {
@@ -1443,6 +1493,8 @@ function discover_setting_definitions(): array
     return [
         'discover_daily_enabled' => ['label' => '启用日报自动采集', 'type' => 'checkbox', 'default' => '1', 'description' => '关闭后 daily 定时任务会跳过。'],
         'discover_weekly_enabled' => ['label' => '启用周榜自动采集', 'type' => 'checkbox', 'default' => '1', 'description' => '关闭后 weekly 定时任务会跳过。'],
+        'discover_backlog_enabled' => ['label' => '启用积压项目自动补跑', 'type' => 'checkbox', 'default' => '1', 'description' => '每 15 分钟检查一次未解读项目，直到 backlog 清空。'],
+        'discover_backlog_batch_size' => ['label' => '每轮 backlog 解读数量', 'type' => 'number', 'default' => '40', 'description' => '每次自动补跑最多处理多少个未解读项目。'],
         'discover_analyze_all' => ['label' => 'GIR 解读全部候选', 'type' => 'checkbox', 'default' => '1', 'description' => '开启后本轮抓到的候选都会进入 GIR 解读。'],
         'discover_max_projects' => ['label' => 'GIR 解读上限', 'type' => 'number', 'default' => '3', 'description' => '仅在关闭“解读全部候选”时生效。'],
         'discover_per_page' => ['label' => '每个平台/分类候选数量', 'type' => 'number', 'default' => '20', 'description' => '每个固定来源、分类或搜索语句最多抓多少候选。'],
@@ -1587,6 +1639,8 @@ function discover_public_config(): array
     return [
         'daily_enabled' => discover_bool_setting('discover_daily_enabled', true),
         'weekly_enabled' => discover_bool_setting('discover_weekly_enabled', true),
+        'backlog_enabled' => discover_bool_setting('discover_backlog_enabled', true),
+        'backlog_batch_size' => discover_int_setting('discover_backlog_batch_size', 40, 1, 200),
         'analyze_all' => discover_bool_setting('discover_analyze_all', true),
         'max_projects' => discover_int_setting('discover_max_projects', 3, 1, 50),
         'per_page' => discover_int_setting('discover_per_page', 20, 1, 100),
@@ -1629,7 +1683,7 @@ function trigger_github_workflow(array $inputs): array
         }
         $cleanInputs[$key] = truncate_text((string) $value, 500);
     }
-    if (!isset($cleanInputs['run_type']) || !in_array($cleanInputs['run_type'], ['daily', 'weekly', 'manual'], true)) {
+    if (!isset($cleanInputs['run_type']) || !in_array($cleanInputs['run_type'], ['daily', 'weekly', 'manual', 'backlog'], true)) {
         $cleanInputs['run_type'] = 'daily';
     }
 
@@ -1677,7 +1731,12 @@ function trigger_github_workflow(array $inputs): array
 
 function trigger_github_discover(string $runType): array
 {
-    return trigger_github_workflow(['run_type' => $runType]);
+    $inputs = ['run_type' => $runType];
+    if ($runType === 'backlog') {
+        $inputs['backfill_existing'] = 'true';
+        $inputs['backlog_pending_only'] = 'true';
+    }
+    return trigger_github_workflow($inputs);
 }
 
 function upsert_project(array $item): int

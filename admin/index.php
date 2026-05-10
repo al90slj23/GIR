@@ -42,6 +42,7 @@ render_header('后台');
             <select name="run_type">
                 <option value="daily">今日榜</option>
                 <option value="weekly">本周榜</option>
+                <option value="backlog">补跑待解读</option>
                 <option value="manual">手动测试</option>
             </select>
             <button class="button" type="submit" name="trigger_discover" value="1">立即更新</button>

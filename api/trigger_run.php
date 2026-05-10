@@ -17,11 +17,17 @@ if ($owner === '' || $repo === '' || $token === '') {
 }
 
 $runType = isset($_POST['run_type']) ? (string) $_POST['run_type'] : 'manual';
+$inputs = [
+    'run_type' => $runType,
+];
+if ($runType === 'backlog') {
+    $inputs['backfill_existing'] = 'true';
+    $inputs['backlog_pending_only'] = 'true';
+}
+
 $body = json_encode([
     'ref' => 'main',
-    'inputs' => [
-        'run_type' => $runType,
-    ],
+    'inputs' => $inputs,
 ], JSON_UNESCAPED_UNICODE);
 
 $url = 'https://api.github.com/repos/' . rawurlencode($owner) . '/' . rawurlencode($repo)
