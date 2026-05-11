@@ -10,11 +10,10 @@
 
 ## 当前环境
 
-- 虚拟主机：Windows Server 2012 R2 Datacenter + IIS 8.5
-- PHP：7.2.5，`cgi-fcgi`
-- FTP：`ftp6398841`，地址 `171.80.8.109`（共享 IP）
+- 虚拟主机：Windows Server + IIS，PHP 7.2（`cgi-fcgi`）
+- FTP：地址由 `.env` 提供，共享 IP
 - 域名：`gir.likeheng.com`、`github.likeheng.com`
-- MySQL：`5.1.33-community`，库名 `sfydb_6398841`，地址 `127.0.0.1`，100M
+- MySQL：`5.1.33-community`，库名与账号由 `.env` 提供，`127.0.0.1`，100M
 - PHP 限制：内存 `128M`，POST `20M`，上传 `20M`，最长执行 `300s`
 - 可用扩展：`mysqli`、`pdo_mysql`、`curl`、`openssl`、`gd`、`zip`、`mbstring`、`fileinfo`、`sockets`、`SimpleXML`
 - 站点协议：当前使用 HTTP
@@ -104,4 +103,4 @@ Data/cacert.pem
 
 `api/receive_projects.php` 和 `api/trigger_run.php` 的异常会写到 `Data/logs/app.log`（不存在会尝试创建）。
 
-探针文件 `x.php`、`mysql_probe.php` 不参与自动部署，只在需要诊断主机环境时手动上传。
+探针文件 `x.php` 不参与自动部署，只在需要诊断主机环境时手动上传；需要时可在本地自己写一份带自定义 token 的探针，诊断后删除，不要提交到仓库。

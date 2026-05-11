@@ -50,25 +50,17 @@ http://gir.likeheng.com/
 http://github.likeheng.com/
 ```
 
-虚拟主机：
+虚拟主机（具体账号 / 数据库名 / IP 等以 `.env` 为准）：
 
 ```text
-FTP 账号：ftp6398841
-FTP 地址：171.80.8.109（共享 IP）
-空间状态：4K/100M
-共享 IP：171.80.8.109
-Web 服务器：Microsoft-IIS/8.5
-系统：Windows NT WIN-6BM95UV21-9 6.3 build 9600（Windows Server 2012 R2 Datacenter Edition）AMD64
-PHP：7.2.5
-PHP SAPI：cgi-fcgi
+Web 服务器：Microsoft-IIS
+系统：Windows Server
+PHP：7.2，cgi-fcgi
 PHP 内存限制：128M
 PHP POST 限制：20M
 PHP 上传限制：20M
 PHP 最长执行时间：300 秒
-脚本路径：D:\localuser\ftp6398841\Web\x.php
-数据库名称：sfydb_6398841
 数据库地址：127.0.0.1
-数据库账号：sfydb_6398841
 MySQL server：5.1.33-community
 MySQL 空间：100M
 MySQLi client：mysqlnd 5.0.12-dev
@@ -542,7 +534,7 @@ node --check actions/discover.js
 FTP 上传单文件示例：
 
 ```bash
-curl --ftp-pasv --netrc-file .netrc -T public/assets/app.css ftp://171.80.8.109/Web/assets/app.css
+curl --ftp-pasv --netrc-file .netrc -T public/assets/app.css ftp://${FTP_HOST}/${FTP_WEB_DIR}/assets/app.css
 ```
 
 调用建表接口：
