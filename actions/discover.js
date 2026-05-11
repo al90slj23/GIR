@@ -1085,13 +1085,14 @@ function looksChinese(text) {
 
 function looksLikeReadmeFilename(name) {
   if (typeof name !== "string") return false;
-  return /^readme(\.[a-z0-9_\-]+)?\.(md|markdown|mdown|mkd|txt|rst)$/i.test(name);
+  // Match both README.zh-CN.md and README_CN.md / README-CN.md styles
+  return /^readme([._\-][a-z0-9_\-]+)?\.(md|markdown|mdown|mkd|txt|rst)$/i.test(name);
 }
 
 function pickZhReadmeCandidate(name) {
   if (!looksLikeReadmeFilename(name)) return null;
   const lower = name.toLowerCase();
-  if (/(readme[._-](zh[-_]?cn|zh[-_]?tw|cn|zh|chs|cht)\.)/.test(lower)) return lower;
+  if (/^readme[._\-](zh[-_]?cn|zh[-_]?tw|cn|zh|chs|cht)\./.test(lower)) return lower;
   return null;
 }
 
@@ -1241,14 +1242,14 @@ async function fetchReadmeQueue(mode, limit) {
   }
 }
 
-async function postReadmes(items) {
+async function postReadmes(items, extraFlags = {}) {
   if (!items.length) return;
   const url = deriveReceiveReadmesUrl();
   if (!url) {
     console.warn("No receive_readmes URL derived; skipping readme post");
     return;
   }
-  const payload = { projects: items };
+  const payload = Object.assign({ projects: items }, extraFlags || {});
   const form = new URLSearchParams();
   form.set("payload_b64", Buffer.from(JSON.stringify(payload), "utf8").toString("base64"));
   const res = await fetchWithTimeout(url, {
@@ -1389,6 +1390,74 @@ async function runReadmeTranslatePass() {
   }
 }
 
+async function collectChineseReadmeOnly(fullName) {
+  // Probe the repo root for a Chinese README variant only; do not re-fetch the default README.
+  const results = [];
+  const contents = await fetchRepoContentsRoot(fullName);
+  if (!Array.isArray(contents)) return results;
+  const candidates = [];
+  for (const entry of contents) {
+    if (!entry || entry.type !== "file") continue;
+    const name = String(entry.name || "");
+    if (pickZhReadmeCandidate(name)) candidates.push(name);
+  }
+  for (const candidate of candidates.slice(0, 2)) {
+    const readme = await fetchReadmeAtPath(fullName, candidate);
+    if (!readme || !readme.content_md) continue;
+    results.push({
+      readme_path: readme.readme_path,
+      language_code: "zh",
+      is_translated: false,
+      source_url: readme.source_url,
+      content_md: readme.content_md,
+    });
+  }
+  return results;
+}
+
+async function runReadmeRecheckZhPass() {
+  const pageSize = readmeFetchBudget > 0 ? readmeFetchBudget : (readmeFetchLimit || 20);
+  if (pageSize <= 0) return;
+  const maxSeconds = Math.max(60, Number(process.env.README_RECHECK_MAX_SECONDS || "240"));
+  const startedAt = Date.now();
+  let totalProcessed = 0;
+
+  while (true) {
+    const elapsed = (Date.now() - startedAt) / 1000;
+    if (elapsed >= maxSeconds) {
+      console.log(`Readme recheck_zh: hit time budget ${maxSeconds}s, total_processed=${totalProcessed}`);
+      break;
+    }
+    const queue = await fetchReadmeQueue("recheck_zh", pageSize);
+    if (!queue.length) {
+      console.log(`Readme recheck_zh: queue drained, total_processed=${totalProcessed}`);
+      break;
+    }
+    console.log(`Readme recheck_zh: batch of ${queue.length} (elapsed=${Math.round(elapsed)}s, total_processed=${totalProcessed})`);
+    const batch = [];
+    for (const project of queue) {
+      if ((Date.now() - startedAt) / 1000 >= maxSeconds) break;
+      try {
+        const zh = await collectChineseReadmeOnly(project.full_name);
+        batch.push({ full_name: project.full_name, readmes: zh });
+        if (requestDelayMs > 0) await sleep(requestDelayMs);
+      } catch (error) {
+        console.warn(`Readme recheck_zh failed ${project.full_name}: ${error.message}`);
+        // Still mark the project as checked even on error so the queue advances.
+        batch.push({ full_name: project.full_name, readmes: [] });
+      }
+    }
+    if (!batch.length) break;
+    try {
+      await postReadmes(batch, { mark_zh_checked: true });
+      totalProcessed += batch.length;
+    } catch (error) {
+      console.warn(`Readme recheck_zh post failed: ${error.message}`);
+      break;
+    }
+  }
+}
+
 async function analyze(repo, readme, history = [], config = defaultConfig) {
   const res = await fetchWithTimeout(`${env.deepseekBaseUrl.replace(/\/$/, "")}/v1/chat/completions`, {
     method: "POST",
@@ -1479,6 +1548,7 @@ async function main() {
     if (config.readme_fetch_enabled !== false) {
       readmeFetchBudget = Math.max(0, Math.min(readmeFetchLimit, Number(config.readme_per_run ?? readmeFetchLimit)));
       await runReadmeFetchPass();
+      await runReadmeRecheckZhPass();
     }
     await runBackfill(config);
     if (config.readme_translate_enabled !== false) {

@@ -32,6 +32,8 @@ $migrations = [
     'is_hidden' => "ALTER TABLE projects ADD COLUMN is_hidden TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER pushed_at",
     'admin_status' => "ALTER TABLE projects ADD COLUMN admin_status VARCHAR(32) NOT NULL DEFAULT 'new' AFTER is_hidden",
     'admin_note' => "ALTER TABLE projects ADD COLUMN admin_note TEXT AFTER admin_status",
+    'last_full_refresh_at' => "ALTER TABLE projects ADD COLUMN last_full_refresh_at DATETIME DEFAULT NULL AFTER updated_at",
+    'zh_readme_checked_at' => "ALTER TABLE projects ADD COLUMN zh_readme_checked_at DATETIME DEFAULT NULL AFTER last_full_refresh_at",
 ];
 
 foreach ($migrations as $column => $statement) {
@@ -43,6 +45,8 @@ foreach ($migrations as $column => $statement) {
 $indexes = [
     'idx_admin_status' => 'ALTER TABLE projects ADD INDEX idx_admin_status (admin_status)',
     'idx_is_hidden' => 'ALTER TABLE projects ADD INDEX idx_is_hidden (is_hidden)',
+    'idx_last_full_refresh' => 'ALTER TABLE projects ADD INDEX idx_last_full_refresh (last_full_refresh_at)',
+    'idx_zh_readme_checked' => 'ALTER TABLE projects ADD INDEX idx_zh_readme_checked (zh_readme_checked_at)',
 ];
 $indexRows = db_all('SHOW INDEX FROM projects');
 $existingIndexes = [];

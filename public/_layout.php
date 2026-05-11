@@ -410,12 +410,11 @@ function render_progress_card_body(string $kind, array $data): void
 <div class="progress-meta">
     <span><strong data-progress-percent><?= h($percentText) ?>%</strong> 完成</span>
     <?php if ($isCollection): ?>
-        <span><?= $active ? '已入库候选' : '今日候选' ?> <strong data-progress-primary><?= number_format((int) ($data['raw_rank'] ?? 0)) ?></strong></span>
-        <span><?= $active ? '本轮目标' : '今日去重项目' ?> <strong data-progress-secondary><?= number_format((int) ($active ? ($data['target'] ?? 0) : ($data['projects'] ?? 0))) ?></strong></span>
-        <?php if ($active): ?>
-            <span>去重项目 <strong data-progress-tertiary><?= number_format((int) ($data['projects'] ?? 0)) ?></strong></span>
-        <?php endif; ?>
-        <span data-progress-date><?= h((string) (($data['report_date'] ?? '') ?: '-')) ?></span>
+        <?php $completion = $data['completion'] ?? []; ?>
+        <span>完整入库 <strong data-progress-primary><?= number_format((int) ($completion['fully_ingested'] ?? 0)) ?></strong>/<strong data-progress-secondary><?= number_format((int) ($completion['total'] ?? 0)) ?></strong></span>
+        <span>缺 README <strong data-progress-tertiary><?= number_format((int) ($completion['pending_readme'] ?? 0)) ?></strong></span>
+        <span>缺中文 <strong><?= number_format((int) ($completion['pending_translation'] ?? 0)) ?></strong></span>
+        <span>缺解读 <strong><?= number_format((int) ($completion['pending_gir'] ?? 0)) ?></strong></span>
     <?php else: ?>
         <span>已解读 <strong data-progress-primary><?= number_format((int) ($data['analyzed'] ?? 0)) ?></strong></span>
         <span>项目库 <strong data-progress-secondary><?= number_format((int) ($data['raw_rank'] ?? 0)) ?></strong></span>
@@ -579,13 +578,13 @@ function render_deepseek_progress_panel(): void
 
   function renderProgressMeta(kind, data, timing, percentText) {
     if (kind === 'collection') {
-      var active = !!data.active;
+      var completion = data.completion || {};
       return '<div class="progress-meta">'
         + '<span><strong data-progress-percent>' + percentText + '%</strong> 完成</span>'
-        + '<span>' + (active ? '已入库候选' : '今日候选') + ' <strong data-progress-primary>' + formatNumber(data.raw_rank) + '</strong></span>'
-        + '<span>' + (active ? '本轮目标' : '今日去重项目') + ' <strong data-progress-secondary>' + formatNumber(active ? data.target : data.projects) + '</strong></span>'
-        + (active ? '<span>去重项目 <strong data-progress-tertiary>' + formatNumber(data.projects) + '</strong></span>' : '')
-        + '<span data-progress-date>' + escapeHtml(data.report_date || '-') + '</span>'
+        + '<span>完整入库 <strong data-progress-primary>' + formatNumber(completion.fully_ingested) + '</strong>/<strong data-progress-secondary>' + formatNumber(completion.total) + '</strong></span>'
+        + '<span>缺 README <strong data-progress-tertiary>' + formatNumber(completion.pending_readme) + '</strong></span>'
+        + '<span>缺中文 <strong>' + formatNumber(completion.pending_translation) + '</strong></span>'
+        + '<span>缺解读 <strong>' + formatNumber(completion.pending_gir) + '</strong></span>'
         + '</div>';
     }
     return '<div class="progress-meta">'

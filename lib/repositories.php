@@ -1204,6 +1204,7 @@ function progress_run_history_stats(string $kind): array
 
 function public_collection_progress_summary(?array $latestRunRow): array
 {
+    $completion = collection_completion_stats();
     $latestDateRow = db_one("SELECT MAX(report_date) AS report_date FROM project_reports WHERE period_type = 'daily' AND raw_rank_only = 1");
     $reportDate = (string) ($latestDateRow['report_date'] ?? '');
     $rows = [];
@@ -1256,8 +1257,9 @@ function public_collection_progress_summary(?array $latestRunRow): array
         ];
     }
 
-    $target = max((int) ($latestRunRow['total_found'] ?? 0), $rawRank);
-    $percent = $target > 0 ? round(min(100, ($rawRank / $target) * 100), 1) : 0;
+    $percent = $completion['total'] > 0
+        ? round(min(100, ($completion['fully_ingested'] / $completion['total']) * 100), 1)
+        : 0;
     $active = ($latestRunRow && (string) ($latestRunRow['status'] ?? '') === 'started')
         || ($percent < 100 && $latestAt !== '' && time() - (int) strtotime($latestAt) <= 20 * 60);
     $timingRow = [
@@ -1275,13 +1277,52 @@ function public_collection_progress_summary(?array $latestRunRow): array
         'raw_rank' => $rawRank,
         'projects' => $uniqueProjectTotal,
         'platform_projects' => $platformProjectTotal,
-        'target' => $target,
+        'target' => max((int) ($latestRunRow['total_found'] ?? 0), $rawRank),
         'percent' => $percent,
         'latest_at' => $latestAt,
-        'timing' => progress_timing($timingRow, $target, $rawRank),
+        'completion' => $completion,
+        'timing' => progress_timing($timingRow, $completion['total'], $completion['fully_ingested']),
         'next_schedule' => progress_next_schedule('collection'),
         'history' => progress_run_history_stats('collection'),
         'platforms' => $platforms,
+    ];
+}
+
+function collection_completion_stats(): array
+{
+    $total = (int) (db_one("SELECT COUNT(*) AS n FROM projects WHERE is_hidden = 0")['n'] ?? 0);
+    $withReadmeRaw = (int) (db_one(
+        "SELECT COUNT(DISTINCT r.project_id) AS n
+         FROM project_readmes r INNER JOIN projects p ON p.id = r.project_id
+         WHERE p.is_hidden = 0 AND r.is_translated = 0"
+    )['n'] ?? 0);
+    $withReadmeZh = (int) (db_one(
+        "SELECT COUNT(DISTINCT r.project_id) AS n
+         FROM project_readmes r INNER JOIN projects p ON p.id = r.project_id
+         WHERE p.is_hidden = 0 AND r.language_code LIKE 'zh%'"
+    )['n'] ?? 0);
+    $withGir = (int) (db_one(
+        "SELECT COUNT(DISTINCT r.project_id) AS n
+         FROM project_reports r INNER JOIN projects p ON p.id = r.project_id
+         WHERE p.is_hidden = 0 AND r.raw_rank_only = 0 AND r.one_sentence <> ''"
+    )['n'] ?? 0);
+    $fully = (int) (db_one(
+        "SELECT COUNT(*) AS n FROM projects p
+         WHERE p.is_hidden = 0
+           AND EXISTS (SELECT 1 FROM project_readmes r WHERE r.project_id = p.id AND r.is_translated = 0)
+           AND EXISTS (SELECT 1 FROM project_readmes r WHERE r.project_id = p.id AND r.language_code LIKE 'zh%')
+           AND EXISTS (SELECT 1 FROM project_reports r WHERE r.project_id = p.id AND r.raw_rank_only = 0 AND r.one_sentence <> '')"
+    )['n'] ?? 0);
+
+    return [
+        'total' => $total,
+        'with_readme_raw' => $withReadmeRaw,
+        'with_readme_zh' => $withReadmeZh,
+        'with_gir' => $withGir,
+        'fully_ingested' => $fully,
+        'pending_readme' => max(0, $total - $withReadmeRaw),
+        'pending_translation' => max(0, $withReadmeRaw - $withReadmeZh),
+        'pending_gir' => max(0, $total - $withGir),
     ];
 }
 

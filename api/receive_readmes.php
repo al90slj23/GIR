@@ -9,6 +9,8 @@ require_token($config['app']['ingest_token']);
 
 $payload = request_json();
 $items = isset($payload['projects']) && is_array($payload['projects']) ? $payload['projects'] : [];
+$markZhChecked = !empty($payload['mark_zh_checked']);
+$markRefreshed = !empty($payload['mark_refreshed']);
 
 if (!$items) {
     json_response(['ok' => false, 'error' => 'empty_projects'], 400);
@@ -35,6 +37,12 @@ foreach ($items as $index => $item) {
     }
     $projectId = (int) $row['id'];
     $stored += readme_ingest_payload($projectId, $item);
+    if ($markZhChecked) {
+        db_exec('UPDATE projects SET zh_readme_checked_at = ? WHERE id = ?', [date('Y-m-d H:i:s'), $projectId]);
+    }
+    if ($markRefreshed) {
+        db_exec('UPDATE projects SET last_full_refresh_at = ? WHERE id = ?', [date('Y-m-d H:i:s'), $projectId]);
+    }
     $processed++;
 }
 

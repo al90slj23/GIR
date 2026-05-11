@@ -16,13 +16,17 @@ CREATE TABLE IF NOT EXISTS projects (
   discovered_at DATETIME NOT NULL,
   created_at DATETIME NOT NULL,
   updated_at DATETIME NOT NULL,
+  last_full_refresh_at DATETIME DEFAULT NULL,
+  zh_readme_checked_at DATETIME DEFAULT NULL,
   PRIMARY KEY (id),
   UNIQUE KEY uniq_full_name (full_name),
   KEY idx_stars (stars),
   KEY idx_language (language),
   KEY idx_admin_status (admin_status),
   KEY idx_is_hidden (is_hidden),
-  KEY idx_discovered_at (discovered_at)
+  KEY idx_discovered_at (discovered_at),
+  KEY idx_last_full_refresh (last_full_refresh_at),
+  KEY idx_zh_readme_checked (zh_readme_checked_at)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
 
 CREATE TABLE IF NOT EXISTS project_reports (
