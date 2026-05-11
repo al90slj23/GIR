@@ -2,7 +2,7 @@ name: Discover GitHub Projects
 
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "*/30 * * * *"
     - cron: "0 1 * * *"
     - cron: "30 1 * * 1"
   workflow_dispatch:
@@ -76,13 +76,13 @@ jobs:
           GIR_GITHUB_SEARCH_TOKEN: ${{ secrets.GIR_GITHUB_SEARCH_TOKEN }}
           APP_INGEST_URL: ${{ secrets.APP_INGEST_URL }}
           APP_INGEST_TOKEN: ${{ secrets.APP_INGEST_TOKEN }}
-          RUN_TYPE: ${{ github.event.inputs.run_type || (github.event.schedule == '*/15 * * * *' && 'backlog') || (github.event.schedule == '30 1 * * 1' && 'weekly') || 'daily' }}
+          RUN_TYPE: ${{ github.event.inputs.run_type || (github.event.schedule == '*/30 * * * *' && 'backlog') || (github.event.schedule == '30 1 * * 1' && 'weekly') || 'daily' }}
           SEED_MODE: ${{ github.event.inputs.seed_mode || 'false' }}
-          BACKFILL_EXISTING: ${{ github.event.inputs.backfill_existing || (github.event.schedule == '*/15 * * * *' && 'true') || 'false' }}
+          BACKFILL_EXISTING: ${{ github.event.inputs.backfill_existing || (github.event.schedule == '*/30 * * * *' && 'true') || 'false' }}
           RESET_ANALYSES: ${{ github.event.inputs.reset_analyses || 'false' }}
           BACKFILL_OFFSET: ${{ github.event.inputs.backfill_offset || '0' }}
           BACKFILL_LIMIT: ${{ github.event.inputs.backfill_limit || '' }}
-          BACKLOG_PENDING_ONLY: ${{ github.event.inputs.backlog_pending_only || (github.event.schedule == '*/15 * * * *' && 'true') || 'false' }}
+          BACKLOG_PENDING_ONLY: ${{ github.event.inputs.backlog_pending_only || (github.event.schedule == '*/30 * * * *' && 'true') || 'false' }}
           DISCOVER_PLATFORMS: ${{ github.event.inputs.platforms || '' }}
           DISCOVER_EXTRA_QUERY: ${{ github.event.inputs.extra_query || '' }}
           GITHUB_SEARCH_SPEC_OFFSET: ${{ github.event.inputs.search_offset || '0' }}
@@ -97,4 +97,7 @@ jobs:
           GITHUB_SEARCH_DELAY_MS: "5000"
           GITHUB_RATE_LIMIT_RETRIES: "2"
           GITHUB_MAX_RATE_LIMIT_WAIT_MS: "60000"
+          README_FETCH_LIMIT: "10"
+          README_TRANSLATE_LIMIT: "5"
+          README_MAX_BYTES: "40000"
         run: node discover.js

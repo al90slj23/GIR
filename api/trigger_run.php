@@ -34,7 +34,7 @@ $url = 'https://api.github.com/repos/' . rawurlencode($owner) . '/' . rawurlenco
     . '/actions/workflows/' . rawurlencode($workflow) . '/dispatches';
 
 $ch = curl_init($url);
-curl_setopt_array($ch, [
+curl_setopt_array($ch, array_replace([
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_CUSTOMREQUEST => 'POST',
     CURLOPT_POSTFIELDS => $body,
@@ -47,9 +47,7 @@ curl_setopt_array($ch, [
     ],
     CURLOPT_TIMEOUT => 20,
     CURLOPT_CONNECTTIMEOUT => 8,
-    CURLOPT_SSL_VERIFYPEER => false,
-    CURLOPT_SSL_VERIFYHOST => 0,
-]);
+], http_ssl_options()));
 $response = curl_exec($ch);
 $errno = curl_errno($ch);
 $error = curl_error($ch);
@@ -57,10 +55,12 @@ $http = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
 curl_close($ch);
 
 if ($errno) {
+    app_log('trigger', 'curl_error', ['detail' => $error, 'run_type' => $runType]);
     json_response(['ok' => false, 'error' => 'curl_error', 'detail' => $error], 502);
 }
 
 if ($http < 200 || $http >= 300) {
+    app_log('trigger', 'github_dispatch_failed', ['http' => $http, 'run_type' => $runType]);
     json_response(['ok' => false, 'error' => 'github_dispatch_failed', 'http' => $http, 'response' => $response], 502);
 }
 

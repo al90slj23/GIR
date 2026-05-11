@@ -8,6 +8,7 @@ $saved = false;
 $errors = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_csrf();
     $settings = isset($_POST['settings']) && is_array($_POST['settings']) ? $_POST['settings'] : [];
     foreach ($settings as $key => $value) {
         $key = preg_replace('/[^a-z0-9_]/', '', (string) $key);
@@ -43,6 +44,7 @@ render_header('站点设置');
         <div class="empty">配置表还没有初始化，请先运行 install_schema.php。</div>
     <?php else: ?>
         <form method="post">
+            <?= csrf_field() ?>
             <div class="settings-list">
                 <?php foreach ($rows as $row): ?>
                     <label class="setting-row">

@@ -48,6 +48,8 @@ jobs:
           upload public/search.php search.php
           upload public/project.php project.php
           upload public/rss.php rss.php
+          upload public/sitemap.php sitemap.php
+          upload public/robots.txt robots.txt
           upload public/_layout.php public/_layout.php
           upload public/assets/app.css assets/app.css
 
@@ -62,7 +64,9 @@ jobs:
           upload api/install_schema.php api/install_schema.php
           upload api/project_history.php api/project_history.php
           upload api/progress.php api/progress.php
+          upload api/readme_queue.php api/readme_queue.php
           upload api/receive_projects.php api/receive_projects.php
+          upload api/receive_readmes.php api/receive_readmes.php
           upload api/reset_analyses.php api/reset_analyses.php
           upload api/stats.php api/stats.php
           upload api/trigger_run.php api/trigger_run.php
@@ -73,6 +77,9 @@ jobs:
           upload lib/bootstrap.php lib/bootstrap.php
           upload lib/db.php lib/db.php
           upload lib/helpers.php lib/helpers.php
+          upload lib/log.php lib/log.php
+          upload lib/markdown.php lib/markdown.php
+          upload lib/Parsedown.php lib/Parsedown.php
           upload lib/repositories.php lib/repositories.php
 
           upload database/schema.sql database/schema.sql

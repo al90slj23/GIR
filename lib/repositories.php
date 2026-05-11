@@ -564,12 +564,24 @@ function recent_report_dates(string $periodType, int $limit = 14): array
 
 function project_with_reports(int $id): ?array
 {
-    $project = db_one('SELECT * FROM projects WHERE id = ?', [$id]);
+    $project = db_one(
+        'SELECT id, github_id, name, full_name, html_url, description, stars, forks, language, topics,
+                pushed_at, is_hidden, admin_status, admin_note, discovered_at, created_at, updated_at
+         FROM projects
+         WHERE id = ?',
+        [$id]
+    );
     if (!$project) {
         return null;
     }
     $project['reports'] = db_all(
-        "SELECT * FROM project_reports WHERE project_id = ? AND raw_rank_only = 0 AND one_sentence <> '' ORDER BY report_date DESC, id DESC",
+        "SELECT id, project_id, run_id, period_type, report_date, source_platform, source_tag, source_rank, source_score,
+                raw_rank_only, one_sentence, project_type, problem_text, tech_stack, target_users,
+                play_score, useful_score, maturity_score, php_fit_score, difficulty, is_suitable_for_this_host,
+                ideas_to_reuse, risks, change_note, recommendation, summary_zh, created_at
+         FROM project_reports
+         WHERE project_id = ? AND raw_rank_only = 0 AND one_sentence <> ''
+         ORDER BY report_date DESC, id DESC",
         [$id]
     );
     return $project;
@@ -683,15 +695,13 @@ function github_search_repositories(string $query, int $limit = 20): array
     }
 
     $ch = curl_init($url);
-    curl_setopt_array($ch, [
+    curl_setopt_array($ch, array_replace([
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_USERAGENT => 'GIR GitHub Search',
         CURLOPT_HTTPHEADER => $headers,
         CURLOPT_TIMEOUT => 20,
         CURLOPT_CONNECTTIMEOUT => 8,
-        CURLOPT_SSL_VERIFYPEER => false,
-        CURLOPT_SSL_VERIFYHOST => 0,
-    ]);
+    ], http_ssl_options()));
 
     $response = curl_exec($ch);
     $errno = curl_errno($ch);
@@ -783,7 +793,7 @@ function github_discover_active_run(): ?array
         ]);
 
     $ch = curl_init($url);
-    curl_setopt_array($ch, [
+    curl_setopt_array($ch, array_replace([
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_USERAGENT => 'GIR Progress Monitor',
         CURLOPT_HTTPHEADER => [
@@ -793,9 +803,7 @@ function github_discover_active_run(): ?array
         ],
         CURLOPT_TIMEOUT => 6,
         CURLOPT_CONNECTTIMEOUT => 3,
-        CURLOPT_SSL_VERIFYPEER => false,
-        CURLOPT_SSL_VERIFYHOST => 0,
-    ]);
+    ], http_ssl_options()));
 
     $response = curl_exec($ch);
     $errno = curl_errno($ch);
@@ -1074,14 +1082,14 @@ function progress_next_schedule(string $kind, bool $preferBacklog = false): arra
     $now = time();
     if ($kind === 'gir' && $preferBacklog && discover_bool_setting('discover_backlog_enabled', true)) {
         $minute = (int) date('i', $now);
-        $nextMinute = ((int) floor($minute / 15) + 1) * 15;
+        $nextMinute = ((int) floor($minute / 30) + 1) * 30;
         $timestamp = $nextMinute >= 60
             ? strtotime(date('Y-m-d H:00:00', strtotime('+1 hour', $now)))
             : strtotime(date('Y-m-d H:', $now) . str_pad((string) $nextMinute, 2, '0', STR_PAD_LEFT) . ':00');
-        $timestamp = $timestamp ?: strtotime('+15 minutes', $now);
+        $timestamp = $timestamp ?: strtotime('+30 minutes', $now);
         $seconds = max(0, $timestamp - $now);
         return [
-            'label' => '每 15 分钟自动补跑',
+            'label' => '每 30 分钟自动补跑',
             'at' => date('Y-m-d H:i:s', $timestamp),
             'remaining_seconds' => $seconds,
             'remaining_text' => progress_duration_precise_text($seconds),
@@ -1378,6 +1386,25 @@ function public_gir_progress_summary(?array $latestRunRow, ?array $activeWorkflo
 
 function public_progress_summary(): array
 {
+    $cachePath = rtrim(sys_get_temp_dir(), '/\\') . DIRECTORY_SEPARATOR . 'gir_progress_summary.json';
+    $cacheTtl = 8;
+    if (is_file($cachePath)) {
+        $raw = @file_get_contents($cachePath);
+        $cached = is_string($raw) ? json_decode($raw, true) : null;
+        if (is_array($cached) && (int) ($cached['cached_at'] ?? 0) + $cacheTtl >= time() && is_array($cached['data'] ?? null)) {
+            return $cached['data'];
+        }
+    }
+    $data = public_progress_summary_uncached();
+    @file_put_contents($cachePath, json_encode([
+        'cached_at' => time(),
+        'data' => $data,
+    ], JSON_UNESCAPED_UNICODE));
+    return $data;
+}
+
+function public_progress_summary_uncached(): array
+{
     $latestCollectionRunRow = db_one(
         'SELECT * FROM runs
          WHERE total_found > 0 AND total_analyzed = 0
@@ -1614,7 +1641,7 @@ function discover_setting_definitions(): array
     return [
         'discover_daily_enabled' => ['label' => '启用日报自动采集', 'type' => 'checkbox', 'default' => '1', 'description' => '关闭后 daily 定时任务会跳过。'],
         'discover_weekly_enabled' => ['label' => '启用周榜自动采集', 'type' => 'checkbox', 'default' => '1', 'description' => '关闭后 weekly 定时任务会跳过。'],
-        'discover_backlog_enabled' => ['label' => '启用积压项目自动补跑', 'type' => 'checkbox', 'default' => '1', 'description' => '每 15 分钟检查一次未解读项目，直到 backlog 清空。'],
+        'discover_backlog_enabled' => ['label' => '启用积压项目自动补跑', 'type' => 'checkbox', 'default' => '1', 'description' => '每 30 分钟检查一次未解读项目，直到 backlog 清空。'],
         'discover_backlog_batch_size' => ['label' => '每轮 backlog 解读数量', 'type' => 'number', 'default' => '40', 'description' => '每次自动补跑最多处理多少个未解读项目。'],
         'discover_analyze_all' => ['label' => 'GIR 解读全部候选', 'type' => 'checkbox', 'default' => '1', 'description' => '开启后本轮抓到的候选都会进入 GIR 解读。'],
         'discover_max_projects' => ['label' => 'GIR 解读上限', 'type' => 'number', 'default' => '3', 'description' => '仅在关闭“解读全部候选”时生效。'],
@@ -1626,6 +1653,10 @@ function discover_setting_definitions(): array
         'discover_min_stars_topic' => ['label' => 'Topic 最低 Stars', 'type' => 'number', 'default' => '50', 'description' => '普通 topic 搜索的最低 Stars。'],
         'discover_min_stars_agent' => ['label' => 'Agent 最低 Stars', 'type' => 'number', 'default' => '30', 'description' => 'agent topic 搜索的最低 Stars。'],
         'discover_extra_queries' => ['label' => '额外搜索语句', 'type' => 'textarea', 'default' => '', 'description' => '每行一条 GitHub Search 查询，可使用 {since}。'],
+        'readme_fetch_enabled' => ['label' => '启用 README 抓取', 'type' => 'checkbox', 'default' => '1', 'description' => '每轮 backlog 会额外抓取若干个没有 README 的项目。'],
+        'readme_translate_enabled' => ['label' => '启用 README 自动翻译', 'type' => 'checkbox', 'default' => '1', 'description' => '只翻译英文 README 且没有中文原版的项目，生成「强翻中文」版本。'],
+        'readme_per_run' => ['label' => '每轮 README 抓取数量', 'type' => 'number', 'default' => '10', 'description' => '每次 backlog 最多抓多少个项目的 README。'],
+        'readme_translate_per_run' => ['label' => '每轮 README 翻译数量', 'type' => 'number', 'default' => '5', 'description' => '每次 backlog 最多翻译多少个项目的 README。'],
         'deepseek_system_prompt' => ['label' => 'GIR 解读系统提示词', 'type' => 'textarea', 'default' => default_deepseek_system_prompt(), 'description' => '控制 GIR 解读的角色、边界和评分标准；当前模型供应商为 DeepSeek。'],
         'deepseek_task_prompt' => ['label' => 'GIR 解读任务提示词', 'type' => 'textarea', 'default' => default_deepseek_task_prompt(), 'description' => '控制每个项目解读的口吻、重点和判断方式；输出 JSON 字段结构由代码固定。'],
     ];
@@ -1776,6 +1807,10 @@ function discover_public_config(): array
         'platforms' => discover_fixed_platforms(),
         'deepseek_system_prompt' => app_setting('deepseek_system_prompt', default_deepseek_system_prompt()),
         'deepseek_task_prompt' => app_setting('deepseek_task_prompt', default_deepseek_task_prompt()),
+        'readme_fetch_enabled' => discover_bool_setting('readme_fetch_enabled', true),
+        'readme_translate_enabled' => discover_bool_setting('readme_translate_enabled', true),
+        'readme_per_run' => discover_int_setting('readme_per_run', 10, 0, 200),
+        'readme_translate_per_run' => discover_int_setting('readme_translate_per_run', 5, 0, 50),
     ];
 }
 
@@ -1817,7 +1852,7 @@ function trigger_github_workflow(array $inputs): array
         . '/actions/workflows/' . rawurlencode($config['github']['workflow']) . '/dispatches';
 
     $ch = curl_init($url);
-    curl_setopt_array($ch, [
+    curl_setopt_array($ch, array_replace([
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_CUSTOMREQUEST => 'POST',
         CURLOPT_POSTFIELDS => $body,
@@ -1830,9 +1865,7 @@ function trigger_github_workflow(array $inputs): array
         ],
         CURLOPT_TIMEOUT => 20,
         CURLOPT_CONNECTTIMEOUT => 8,
-        CURLOPT_SSL_VERIFYPEER => false,
-        CURLOPT_SSL_VERIFYHOST => 0,
-    ]);
+    ], http_ssl_options()));
 
     $response = curl_exec($ch);
     $errno = curl_errno($ch);
@@ -2049,4 +2082,141 @@ function normalize_recommendation($value): string
 {
     $value = (string) $value;
     return in_array($value, ['收藏', '研究', '可复刻', '暂不关注'], true) ? $value : '暂不关注';
+}
+
+function upsert_project_readme(int $projectId, array $row): int
+{
+    $readmePath = truncate_text($row['readme_path'] ?? '', 255);
+    $languageCode = truncate_text($row['language_code'] ?? 'en', 32);
+    $isTranslated = !empty($row['is_translated']) ? 1 : 0;
+    $sourceLanguageCode = truncate_text($row['source_language_code'] ?? '', 32);
+    $sourceUrl = truncate_text($row['source_url'] ?? '', 500);
+    $content = (string) ($row['content_md'] ?? '');
+    if (function_exists('mb_strlen') && mb_strlen($content, 'UTF-8') > 40000) {
+        $content = mb_substr($content, 0, 40000, 'UTF-8');
+    } elseif (strlen($content) > 80000) {
+        $content = substr($content, 0, 80000);
+    }
+    $content = strip_mysql_utf8_unsupported($content);
+    $fetchedAt = normalize_datetime($row['fetched_at'] ?? null) ?: date('Y-m-d H:i:s');
+    $now = date('Y-m-d H:i:s');
+
+    $existing = db_one(
+        'SELECT id FROM project_readmes
+         WHERE project_id = ? AND readme_path = ? AND language_code = ? AND is_translated = ?',
+        [$projectId, $readmePath, $languageCode, $isTranslated]
+    );
+
+    if ($existing) {
+        db_exec(
+            'UPDATE project_readmes
+             SET source_url = ?, source_language_code = ?, content_md = ?, fetched_at = ?, updated_at = ?
+             WHERE id = ?',
+            [$sourceUrl, $sourceLanguageCode, $content, $fetchedAt, $now, (int) $existing['id']]
+        );
+        return (int) $existing['id'];
+    }
+
+    db_exec(
+        'INSERT INTO project_readmes
+         (project_id, readme_path, language_code, source_url, is_translated, source_language_code,
+          content_md, fetched_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [
+            $projectId,
+            $readmePath,
+            $languageCode,
+            $sourceUrl,
+            $isTranslated,
+            $sourceLanguageCode,
+            $content,
+            $fetchedAt,
+            $now,
+            $now,
+        ]
+    );
+    return db_insert_id();
+}
+
+function list_project_readmes(int $projectId): array
+{
+    return db_all(
+        "SELECT id, project_id, readme_path, language_code, is_translated, source_language_code,
+                source_url, content_md, fetched_at, created_at, updated_at
+         FROM project_readmes
+         WHERE project_id = ?
+         ORDER BY is_translated ASC,
+                  CASE language_code WHEN 'zh-CN' THEN 0 WHEN 'zh' THEN 1 WHEN 'en' THEN 2 ELSE 9 END ASC,
+                  id ASC",
+        [$projectId]
+    );
+}
+
+function classify_project_readmes(array $readmes): array
+{
+    $native_zh = null;
+    $native_en = null;
+    $machine_zh = null;
+    foreach ($readmes as $row) {
+        $isTranslated = (int) ($row['is_translated'] ?? 0) === 1;
+        $lang = strtolower((string) ($row['language_code'] ?? ''));
+        $isZh = $lang === 'zh' || $lang === 'zh-cn' || $lang === 'zh_cn' || $lang === 'zh-tw' || strpos($lang, 'zh') === 0;
+        if ($isTranslated && $isZh && !$machine_zh) {
+            $machine_zh = $row;
+        } elseif (!$isTranslated && $isZh && !$native_zh) {
+            $native_zh = $row;
+        } elseif (!$isTranslated && !$isZh && !$native_en) {
+            $native_en = $row;
+        }
+    }
+    return [
+        'native_zh' => $native_zh,
+        'native_en' => $native_en,
+        'machine_zh' => $machine_zh,
+    ];
+}
+
+function readme_ingest_payload(int $projectId, array $payload): int
+{
+    $rows = is_array($payload['readmes'] ?? null) ? $payload['readmes'] : [];
+    $stored = 0;
+    foreach ($rows as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        if (upsert_project_readme($projectId, $row) > 0) {
+            $stored++;
+        }
+    }
+    return $stored;
+}
+
+function readme_pending_projects(int $limit, bool $translateOnly = false): array
+{
+    $limit = max(1, min(200, $limit));
+    if ($translateOnly) {
+        $sql = "SELECT p.id, p.full_name
+                FROM projects p
+                WHERE p.is_hidden = 0
+                  AND EXISTS (
+                      SELECT 1 FROM project_readmes rr
+                      WHERE rr.project_id = p.id AND rr.is_translated = 0 AND rr.language_code = 'en'
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM project_readmes rr
+                      WHERE rr.project_id = p.id AND rr.language_code LIKE 'zh%'
+                  )
+                ORDER BY p.stars DESC, p.id ASC
+                LIMIT " . $limit;
+    } else {
+        $sql = 'SELECT p.id, p.full_name
+                FROM projects p
+                WHERE p.is_hidden = 0
+                  AND NOT EXISTS (
+                      SELECT 1 FROM project_readmes rr WHERE rr.project_id = p.id
+                  )
+                ORDER BY p.stars DESC, p.id ASC
+                LIMIT ' . $limit;
+    }
+    return db_all($sql);
 }

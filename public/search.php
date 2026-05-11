@@ -12,10 +12,6 @@ if ($query !== '' && !empty($search['ok']) && $results) {
 $localIndex = projects_index_by_full_names(array_map(static function (array $row): string {
     return (string) ($row['full_name'] ?? '');
 }, $results));
-$dispatch = null;
-if ($query !== '' && !empty($search['ok']) && $results) {
-    $dispatch = trigger_github_search_ingest($query);
-}
 
 render_header('GitHub 搜索');
 ?>
@@ -29,21 +25,9 @@ render_header('GitHub 搜索');
     <div class="section-head compact">
         <div>
             <h2>GitHub 搜索结果</h2>
-            <div class="muted">关键词 “<?= h($query) ?>” · GitHub 返回约 <?= number_format((int) ($search['total_count'] ?? count($results))) ?> 个仓库，当前展示前 <?= count($results) ?> 个 · 已即时入库 <?= number_format((int) ($localIngest['stored'] ?? 0)) ?> 个。</div>
+            <div class="muted">关键词 “<?= h($query) ?>” · GitHub 返回约 <?= number_format((int) ($search['total_count'] ?? count($results))) ?> 个仓库，当前展示前 <?= count($results) ?> 个 · 已即时入库 <?= number_format((int) ($localIngest['stored'] ?? 0)) ?> 个，将由后台 backlog 自动解读。</div>
         </div>
-        <?php if ($dispatch): ?>
-            <?php if (!empty($dispatch['ok']) && !empty($dispatch['skipped'])): ?>
-                <span class="badge muted">已在队列中</span>
-            <?php elseif (!empty($dispatch['ok'])): ?>
-                <span class="badge green">已提交入库</span>
-            <?php else: ?>
-                <span class="badge red">入库触发失败</span>
-            <?php endif; ?>
-        <?php endif; ?>
     </div>
-    <?php if ($dispatch && empty($dispatch['ok'])): ?>
-        <div class="notice warning">GitHub 搜索结果已显示，但入库队列没有触发成功：<?= h((string) ($dispatch['error'] ?? 'unknown_error')) ?></div>
-    <?php endif; ?>
     <div class="grid">
         <?php foreach ($results as $index => $row): ?>
             <?php

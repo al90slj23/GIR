@@ -83,4 +83,25 @@ GIR_GITHUB_SEARCH_TOKEN
 
 `GIR_GITHUB_SEARCH_TOKEN` 用于 GitHub Search 补跑，建议使用只授权本仓库的 fine-grained PAT，避免 Actions 内置安装 token 被搜索接口限流。
 
+## 自动补跑与搜索策略
+
+`discover.yml` 每 30 分钟会跑一次 backlog，只处理未解读项目，直到清空。每日采集 09:00 北京时间、每周采集周一 09:30 北京时间。
+
+前台 `/search.php` 搜索只做两件事：同步 GitHub 搜索结果 + 把结果入库成 raw 行，不再即时触发 GitHub Actions；新入库项目会在下一次 backlog 时自动被 GIR 解读，避免恶意搜索关键词打爆 Actions 和 DeepSeek 额度。
+
+## cURL 证书校验
+
+如果主机缺 CA 根证书，可以把一份 `cacert.pem` 放在以下任一位置并重启 PHP：
+
+```text
+Web/config/cacert.pem
+Data/cacert.pem
+```
+
+或者在 `.env` 里设置 `CA_BUNDLE_PATH` 指向绝对路径。命中任一路径后，PHP cURL 会走严格证书校验，否则回退到关闭校验。
+
+## 运行日志
+
+`api/receive_projects.php` 和 `api/trigger_run.php` 的异常会写到 `Data/logs/app.log`（不存在会尝试创建）。
+
 探针文件 `x.php`、`mysql_probe.php` 不参与自动部署，只在需要诊断主机环境时手动上传。

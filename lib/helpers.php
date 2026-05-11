@@ -14,6 +14,39 @@ function json_response(array $payload, int $status = 200): void
     exit;
 }
 
+function http_ssl_options(): array
+{
+    static $options = null;
+    if ($options !== null) {
+        return $options;
+    }
+
+    $candidates = [];
+    $envPath = function_exists('env_value') ? env_value('CA_BUNDLE_PATH', '') : '';
+    if ($envPath !== '') {
+        $candidates[] = $envPath;
+    }
+    $candidates[] = dirname(__DIR__) . '/config/cacert.pem';
+    $candidates[] = dirname(dirname(__DIR__)) . '/Data/cacert.pem';
+
+    foreach ($candidates as $path) {
+        if ($path !== '' && is_file($path) && is_readable($path)) {
+            $options = [
+                CURLOPT_SSL_VERIFYPEER => true,
+                CURLOPT_SSL_VERIFYHOST => 2,
+                CURLOPT_CAINFO => $path,
+            ];
+            return $options;
+        }
+    }
+
+    $options = [
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => 0,
+    ];
+    return $options;
+}
+
 function app_setting(string $key, string $default = ''): string
 {
     static $settings = null;

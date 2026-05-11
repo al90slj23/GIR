@@ -23,6 +23,50 @@ function admin_cookie_value(string $token): string
     return hash_hmac('sha256', 'gir_admin', $token);
 }
 
+function csrf_token(): string
+{
+    global $config;
+    $secret = (string) ($config['app']['admin_token'] ?? '');
+    if ($secret === '' || $secret === 'change_me') {
+        $secret = (string) ($config['app']['trigger_token'] ?? 'gir_csrf_fallback');
+    }
+    $cookie = isset($_COOKIE['gir_csrf']) ? (string) $_COOKIE['gir_csrf'] : '';
+    if (!preg_match('/^[a-f0-9]{32}$/', $cookie)) {
+        $cookie = bin2hex(random_bytes(16));
+        $secure = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+        setcookie('gir_csrf', $cookie, time() + 7200, '/', '', $secure, true);
+        $_COOKIE['gir_csrf'] = $cookie;
+    }
+    return hash_hmac('sha256', $cookie, $secret);
+}
+
+function csrf_field(): string
+{
+    return '<input type="hidden" name="_csrf" value="' . h(csrf_token()) . '">';
+}
+
+function csrf_check(): bool
+{
+    $provided = isset($_POST['_csrf']) ? (string) $_POST['_csrf'] : '';
+    if ($provided === '') {
+        return false;
+    }
+    return hash_equals(csrf_token(), $provided);
+}
+
+function require_csrf(): void
+{
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        return;
+    }
+    if (!csrf_check()) {
+        http_response_code(403);
+        header('Content-Type: text/plain; charset=utf-8');
+        echo 'CSRF token invalid. Please reload the page and try again.';
+        exit;
+    }
+}
+
 function is_admin_authenticated(): bool
 {
     global $config;

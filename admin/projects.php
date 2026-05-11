@@ -9,6 +9,7 @@ $saved = false;
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['project_id'])) {
+    require_csrf();
     $projectId = (int) $_POST['project_id'];
     $status = isset($_POST['admin_status']) ? (string) $_POST['admin_status'] : 'new';
     $hidden = isset($_POST['is_hidden']) && (string) $_POST['is_hidden'] === '1';
@@ -114,6 +115,7 @@ render_header('项目管理');
                 </div>
 
                 <form method="post" class="project-admin-form">
+                    <?= csrf_field() ?>
                     <input type="hidden" name="project_id" value="<?= (int) $project['id'] ?>">
                     <label>
                         <span>研究状态</span>

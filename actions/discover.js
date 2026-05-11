@@ -1,6 +1,13 @@
 const backfillMode = ["1", "true", "yes", "on"].includes(String(process.env.BACKFILL_EXISTING || "").toLowerCase());
 const backlogPendingOnly = ["1", "true", "yes", "on"].includes(String(process.env.BACKLOG_PENDING_ONLY || "").toLowerCase());
 const resetAnalyses = ["1", "true", "yes", "on"].includes(String(process.env.RESET_ANALYSES || "").toLowerCase());
+const readmeFetchLimit = Math.max(0, Number(process.env.README_FETCH_LIMIT || "10"));
+const readmeTranslateLimit = Math.max(0, Number(process.env.README_TRANSLATE_LIMIT || "5"));
+const readmeMaxBytes = Math.max(2000, Number(process.env.README_MAX_BYTES || "40000"));
+let readmeFetchEnabled = true;
+let readmeTranslateEnabled = true;
+let readmeFetchBudget = readmeFetchLimit;
+let readmeTranslateBudget = readmeTranslateLimit;
 const runType = process.env.RUN_TYPE || process.argv[2] || "daily";
 const periodType = backfillMode
   ? (backlogPendingOnly ? "manual" : "daily")
@@ -217,6 +224,20 @@ function deriveResetAnalysesUrl() {
   return "";
 }
 
+function deriveReadmeQueueUrl() {
+  if (/\/api\/receive_projects\.php($|\?)/.test(env.ingestUrl)) {
+    return env.ingestUrl.replace(/\/api\/receive_projects\.php($|\?.*)/, "/api/readme_queue.php");
+  }
+  return "";
+}
+
+function deriveReceiveReadmesUrl() {
+  if (/\/api\/receive_projects\.php($|\?)/.test(env.ingestUrl)) {
+    return env.ingestUrl.replace(/\/api\/receive_projects\.php($|\?.*)/, "/api/receive_readmes.php");
+  }
+  return "";
+}
+
 async function loadDiscoverConfig() {
   const url = deriveConfigUrl();
   if (!url) return defaultConfig;
@@ -257,6 +278,10 @@ async function loadDiscoverConfig() {
       platforms,
       deepseek_system_prompt: String(config.deepseek_system_prompt || defaultConfig.deepseek_system_prompt).trim() || defaultConfig.deepseek_system_prompt,
       deepseek_task_prompt: String(config.deepseek_task_prompt || defaultConfig.deepseek_task_prompt).trim() || defaultConfig.deepseek_task_prompt,
+      readme_fetch_enabled: config.readme_fetch_enabled !== false,
+      readme_translate_enabled: config.readme_translate_enabled !== false,
+      readme_per_run: clampNumber(config.readme_per_run, 10, 0, 200),
+      readme_translate_per_run: clampNumber(config.readme_translate_per_run, 5, 0, 50),
     };
   } catch (error) {
     console.warn(`Config error: ${error.message}; using defaults`);
@@ -1020,10 +1045,287 @@ async function runBackfill(config) {
   if (analyzedBatch.length) {
     await ingest(analyzedBatch, analysisIngestBatchSize);
   }
-  if (!analyzedCount) {
+  if (!analyzedCount && !backlogPendingOnly) {
     throw new Error("No projects analyzed in backfill");
   }
   console.log(`Backfill complete: total_loaded=${repos.length}, total_analyzed=${analyzedCount}`);
+}
+
+function decodeBase64Utf8(value) {
+  return Buffer.from(String(value || ""), "base64").toString("utf8");
+}
+
+function truncateReadme(text) {
+  if (!text) return "";
+  if (Buffer.byteLength(text, "utf8") <= readmeMaxBytes) return text;
+  const slice = Buffer.from(text, "utf8").subarray(0, readmeMaxBytes).toString("utf8");
+  return slice;
+}
+
+function looksChinese(text) {
+  if (!text) return false;
+  const letters = (text.match(/[\p{L}]/gu) || []).length;
+  if (letters === 0) return false;
+  const cjk = (text.match(/[\u4E00-\u9FFF\u3400-\u4DBF]/g) || []).length;
+  return cjk / letters >= 0.2;
+}
+
+function looksLikeReadmeFilename(name) {
+  if (typeof name !== "string") return false;
+  return /^readme(\.[a-z0-9_\-]+)?\.(md|markdown|mdown|mkd|txt|rst)$/i.test(name);
+}
+
+function pickZhReadmeCandidate(name) {
+  if (!looksLikeReadmeFilename(name)) return null;
+  const lower = name.toLowerCase();
+  if (/(readme[._-](zh[-_]?cn|zh[-_]?tw|cn|zh|chs|cht)\.)/.test(lower)) return lower;
+  return null;
+}
+
+async function fetchRepoContentsRoot(fullName) {
+  try {
+    return await githubJson(`https://api.github.com/repos/${fullName}/contents`);
+  } catch (error) {
+    console.warn(`Contents listing failed ${fullName}: ${error.message}`);
+    return [];
+  }
+}
+
+async function fetchReadmeAtPath(fullName, path) {
+  try {
+    const data = await githubJson(`https://api.github.com/repos/${fullName}/contents/${encodeURIComponent(path)}`);
+    if (!data || !data.content) return null;
+    const encoding = String(data.encoding || "base64").toLowerCase();
+    const content = encoding === "base64" ? decodeBase64Utf8(data.content) : String(data.content || "");
+    return {
+      readme_path: String(data.path || path),
+      source_url: String(data.html_url || `https://github.com/${fullName}/blob/HEAD/${path}`),
+      content_md: truncateReadme(content),
+    };
+  } catch (error) {
+    console.warn(`Readme path ${fullName}:${path} failed: ${error.message}`);
+    return null;
+  }
+}
+
+async function fetchDefaultReadme(fullName) {
+  try {
+    const data = await githubJson(`https://api.github.com/repos/${fullName}/readme`);
+    if (!data || !data.content) return null;
+    const encoding = String(data.encoding || "base64").toLowerCase();
+    const content = encoding === "base64" ? decodeBase64Utf8(data.content) : String(data.content || "");
+    return {
+      readme_path: String(data.path || "README.md"),
+      source_url: String(data.html_url || `https://github.com/${fullName}/blob/HEAD/README.md`),
+      content_md: truncateReadme(content),
+    };
+  } catch (error) {
+    console.warn(`Readme default ${fullName} failed: ${error.message}`);
+    return null;
+  }
+}
+
+async function collectProjectReadmes(fullName) {
+  const readmes = [];
+  const seenPaths = new Set();
+
+  const defaultReadme = await fetchDefaultReadme(fullName);
+  if (defaultReadme && defaultReadme.content_md) {
+    const lang = looksChinese(defaultReadme.content_md) ? "zh" : "en";
+    readmes.push({
+      readme_path: defaultReadme.readme_path,
+      language_code: lang,
+      is_translated: false,
+      source_url: defaultReadme.source_url,
+      content_md: defaultReadme.content_md,
+    });
+    seenPaths.add(defaultReadme.readme_path.toLowerCase());
+  }
+
+  if (!readmes.some((item) => item.language_code === "zh" && !item.is_translated)) {
+    const contents = await fetchRepoContentsRoot(fullName);
+    const zhCandidates = [];
+    if (Array.isArray(contents)) {
+      for (const entry of contents) {
+        if (!entry || entry.type !== "file") continue;
+        const name = String(entry.name || "");
+        if (pickZhReadmeCandidate(name) && !seenPaths.has(name.toLowerCase())) {
+          zhCandidates.push(name);
+        }
+      }
+    }
+    for (const candidate of zhCandidates.slice(0, 2)) {
+      const readme = await fetchReadmeAtPath(fullName, candidate);
+      if (!readme || !readme.content_md) continue;
+      readmes.push({
+        readme_path: readme.readme_path,
+        language_code: "zh",
+        is_translated: false,
+        source_url: readme.source_url,
+        content_md: readme.content_md,
+      });
+      seenPaths.add(readme.readme_path.toLowerCase());
+    }
+  }
+
+  return readmes;
+}
+
+async function translateReadmeToChinese(markdown) {
+  if (!markdown || !markdown.trim()) return "";
+  const system = [
+    "你是一名资深的开源项目文档翻译，你的任务是把英文 README.md 一比一翻译成中文。",
+    "严格保留原始 Markdown 结构（标题层级、列表、代码块、表格、链接、图片、行内格式）。",
+    "代码块内容不翻译。已有中文的段落原样保留。专有名词、项目名、命令、包名保持原文。",
+    "不要添加任何前言、总结或附注。不要输出 Markdown 以外的说明。",
+  ].join("\n");
+  const res = await fetchWithTimeout(`${env.deepseekBaseUrl.replace(/\/$/, "")}/v1/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${env.deepseekKey}`,
+    },
+    body: JSON.stringify({
+      model: env.deepseekModel,
+      temperature: 0.2,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: markdown },
+      ],
+    }),
+  }, 120000);
+  if (!res.ok) {
+    throw new Error(`DeepSeek translate ${res.status}: ${await res.text()}`);
+  }
+  const data = await res.json();
+  const content = data?.choices?.[0]?.message?.content;
+  return typeof content === "string" ? truncateReadme(content) : "";
+}
+
+async function fetchReadmeQueue(mode, limit) {
+  const base = deriveReadmeQueueUrl();
+  if (!base) return [];
+  const url = new URL(base);
+  url.searchParams.set("mode", mode);
+  url.searchParams.set("limit", String(limit));
+  try {
+    const res = await fetchWithTimeout(url.toString(), {
+      headers: {
+        "Accept": "application/json",
+        "Authorization": `Bearer ${env.ingestToken}`,
+        "User-Agent": "GIR-Discover",
+      },
+    }, 30000);
+    if (!res.ok) {
+      console.warn(`Readme queue ${mode} ${res.status}: ${await res.text()}`);
+      return [];
+    }
+    const data = await res.json();
+    return Array.isArray(data.projects) ? data.projects : [];
+  } catch (error) {
+    console.warn(`Readme queue ${mode} error: ${error.message}`);
+    return [];
+  }
+}
+
+async function postReadmes(items) {
+  if (!items.length) return;
+  const url = deriveReceiveReadmesUrl();
+  if (!url) {
+    console.warn("No receive_readmes URL derived; skipping readme post");
+    return;
+  }
+  const payload = { projects: items };
+  const form = new URLSearchParams();
+  form.set("payload_b64", Buffer.from(JSON.stringify(payload), "utf8").toString("base64"));
+  const res = await fetchWithTimeout(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Authorization": `Bearer ${env.ingestToken}`,
+    },
+    body: form.toString(),
+  }, 60000);
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`Receive readmes ${res.status}: ${text}`);
+  }
+  console.log(`Readme ingest: ${text}`);
+}
+
+async function runReadmeFetchPass() {
+  const budget = readmeFetchBudget > 0 ? readmeFetchBudget : readmeFetchLimit;
+  if (budget <= 0) return;
+  const queue = await fetchReadmeQueue("fetch", budget);
+  if (!queue.length) {
+    console.log("Readme fetch: no pending projects");
+    return;
+  }
+  console.log(`Readme fetch: ${queue.length} projects`);
+  const batch = [];
+  for (const project of queue) {
+    try {
+      const readmes = await collectProjectReadmes(project.full_name);
+      if (readmes.length) {
+        batch.push({ full_name: project.full_name, readmes });
+      } else {
+        batch.push({ full_name: project.full_name, readmes: [] });
+      }
+      if (requestDelayMs > 0) await sleep(requestDelayMs);
+    } catch (error) {
+      console.warn(`Readme fetch failed ${project.full_name}: ${error.message}`);
+    }
+  }
+  if (batch.length) {
+    try {
+      await postReadmes(batch);
+    } catch (error) {
+      console.warn(`Readme post failed: ${error.message}`);
+    }
+  }
+}
+
+async function runReadmeTranslatePass() {
+  const budget = readmeTranslateBudget > 0 ? readmeTranslateBudget : readmeTranslateLimit;
+  if (budget <= 0) return;
+  const queue = await fetchReadmeQueue("translate", budget);
+  if (!queue.length) {
+    console.log("Readme translate: no pending projects");
+    return;
+  }
+  console.log(`Readme translate: ${queue.length} projects`);
+  const batch = [];
+  for (const project of queue) {
+    const source = project.source_readme;
+    if (!source || !source.content_md) continue;
+    try {
+      const translated = await translateReadmeToChinese(source.content_md);
+      if (!translated) continue;
+      batch.push({
+        full_name: project.full_name,
+        readmes: [
+          {
+            readme_path: source.readme_path,
+            language_code: "zh",
+            is_translated: true,
+            source_language_code: source.language_code || "en",
+            source_url: `https://github.com/${project.full_name}/blob/HEAD/${source.readme_path}`,
+            content_md: translated,
+          },
+        ],
+      });
+      if (requestDelayMs > 0) await sleep(requestDelayMs);
+    } catch (error) {
+      console.warn(`Readme translate failed ${project.full_name}: ${error.message}`);
+    }
+  }
+  if (batch.length) {
+    try {
+      await postReadmes(batch);
+    } catch (error) {
+      console.warn(`Readme translate post failed: ${error.message}`);
+    }
+  }
 }
 
 async function analyze(repo, readme, history = [], config = defaultConfig) {
@@ -1113,7 +1415,15 @@ async function main() {
       console.log("Backlog auto-run disabled by config; skipping");
       return;
     }
+    if (config.readme_fetch_enabled !== false) {
+      readmeFetchBudget = Math.max(0, Math.min(readmeFetchLimit, Number(config.readme_per_run ?? readmeFetchLimit)));
+      await runReadmeFetchPass();
+    }
     await runBackfill(config);
+    if (config.readme_translate_enabled !== false) {
+      readmeTranslateBudget = Math.max(0, Math.min(readmeTranslateLimit, Number(config.readme_translate_per_run ?? readmeTranslateLimit)));
+      await runReadmeTranslatePass();
+    }
     return;
   }
   if (periodType === "daily" && config.daily_enabled === false) {

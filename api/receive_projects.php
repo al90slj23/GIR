@@ -61,6 +61,18 @@ foreach ($projects as $index => $item) {
 $status = $errors ? ($stored > 0 ? 'partial' : 'failed') : 'success';
 finish_run($runId, $status, $found, $analyzed, implode("\n", $errors));
 
+if ($errors) {
+    app_log('ingest', 'partial/failed', [
+        'run_id' => $runId,
+        'status' => $status,
+        'found' => $found,
+        'stored' => $stored,
+        'analyzed' => $analyzed,
+        'error_count' => count($errors),
+        'first_error' => $errors[0] ?? '',
+    ]);
+}
+
 json_response([
     'ok' => $stored > 0,
     'run_id' => $runId,

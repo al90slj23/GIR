@@ -4,3 +4,4 @@
 .env.*
 !.env.example
 .DS_Store
+.deploy_local.sh

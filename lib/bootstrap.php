@@ -6,5 +6,7 @@ date_default_timezone_set($config['app']['timezone']);
 
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/log.php';
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/markdown.php';
 require_once __DIR__ . '/repositories.php';

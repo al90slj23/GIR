@@ -8,6 +8,7 @@ $triggerMessage = '';
 $triggerError = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['trigger_discover'])) {
+    require_csrf();
     $runType = isset($_POST['run_type']) ? (string) $_POST['run_type'] : 'daily';
     $result = trigger_github_discover($runType);
     if (!empty($result['ok'])) {
@@ -39,6 +40,7 @@ render_header('后台');
     <?php endif; ?>
     <?php if ($canTrigger): ?>
         <form method="post" class="inline-form">
+            <?= csrf_field() ?>
             <select name="run_type">
                 <option value="daily">今日榜</option>
                 <option value="weekly">本周榜</option>
