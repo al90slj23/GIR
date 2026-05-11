@@ -242,7 +242,7 @@ INSERT IGNORE INTO app_settings (setting_key, setting_value, description, update
 VALUES ('readme_translate_enabled', '1', '是否对英文 README 自动翻译成中文', NOW());
 
 INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
-VALUES ('readme_per_run', '10', '每轮 backlog 最多抓取多少个项目的 README', NOW());
+VALUES ('readme_per_run', '20', '每轮 backlog 每批抓取多少个项目的 README（会持续抓到清空或时间预算到）', NOW());
 
 INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
-VALUES ('readme_translate_per_run', '5', '每轮 backlog 最多翻译多少个英文 README', NOW());
+VALUES ('readme_translate_per_run', '5', '每轮 backlog 每批翻译多少个英文 README（会持续翻译到清空或时间预算到）', NOW());

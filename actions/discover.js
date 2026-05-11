@@ -1267,76 +1267,124 @@ async function postReadmes(items) {
 }
 
 async function runReadmeFetchPass() {
-  const budget = readmeFetchBudget > 0 ? readmeFetchBudget : readmeFetchLimit;
-  if (budget <= 0) return;
-  const queue = await fetchReadmeQueue("fetch", budget);
-  if (!queue.length) {
-    console.log("Readme fetch: no pending projects");
-    return;
-  }
-  console.log(`Readme fetch: ${queue.length} projects`);
-  const batch = [];
-  for (const project of queue) {
-    try {
-      const readmes = await collectProjectReadmes(project.full_name);
-      if (readmes.length) {
-        batch.push({ full_name: project.full_name, readmes });
-      } else {
-        batch.push({ full_name: project.full_name, readmes: [] });
-      }
-      if (requestDelayMs > 0) await sleep(requestDelayMs);
-    } catch (error) {
-      console.warn(`Readme fetch failed ${project.full_name}: ${error.message}`);
+  const pageSize = readmeFetchBudget > 0 ? readmeFetchBudget : (readmeFetchLimit || 20);
+  if (pageSize <= 0) return;
+  const maxSeconds = Math.max(60, Number(process.env.README_FETCH_MAX_SECONDS || "480"));
+  const startedAt = Date.now();
+  let totalProcessed = 0;
+  let consecutiveFailures = 0;
+
+  while (true) {
+    const elapsed = (Date.now() - startedAt) / 1000;
+    if (elapsed >= maxSeconds) {
+      console.log(`Readme fetch: hit time budget ${maxSeconds}s, total_processed=${totalProcessed}`);
+      break;
     }
-  }
-  if (batch.length) {
+
+    const queue = await fetchReadmeQueue("fetch", pageSize);
+    if (!queue.length) {
+      console.log(`Readme fetch: queue drained, total_processed=${totalProcessed}`);
+      break;
+    }
+
+    console.log(`Readme fetch: batch of ${queue.length} (elapsed=${Math.round(elapsed)}s, total_processed=${totalProcessed})`);
+    const batch = [];
+    for (const project of queue) {
+      if ((Date.now() - startedAt) / 1000 >= maxSeconds) break;
+      try {
+        const readmes = await collectProjectReadmes(project.full_name);
+        batch.push({ full_name: project.full_name, readmes });
+        if (requestDelayMs > 0) await sleep(requestDelayMs);
+      } catch (error) {
+        console.warn(`Readme fetch failed ${project.full_name}: ${error.message}`);
+      }
+    }
+
+    if (!batch.length) {
+      consecutiveFailures++;
+      if (consecutiveFailures >= 3) {
+        console.warn("Readme fetch: 3 empty batches in a row, bailing out");
+        break;
+      }
+      continue;
+    }
+    consecutiveFailures = 0;
+
     try {
       await postReadmes(batch);
+      totalProcessed += batch.length;
     } catch (error) {
       console.warn(`Readme post failed: ${error.message}`);
+      break;
     }
   }
 }
 
 async function runReadmeTranslatePass() {
-  const budget = readmeTranslateBudget > 0 ? readmeTranslateBudget : readmeTranslateLimit;
-  if (budget <= 0) return;
-  const queue = await fetchReadmeQueue("translate", budget);
-  if (!queue.length) {
-    console.log("Readme translate: no pending projects");
-    return;
-  }
-  console.log(`Readme translate: ${queue.length} projects`);
-  const batch = [];
-  for (const project of queue) {
-    const source = project.source_readme;
-    if (!source || !source.content_md) continue;
-    try {
-      const translated = await translateReadmeToChinese(source.content_md);
-      if (!translated) continue;
-      batch.push({
-        full_name: project.full_name,
-        readmes: [
-          {
-            readme_path: source.readme_path,
-            language_code: "zh",
-            is_translated: true,
-            source_language_code: source.language_code || "en",
-            source_url: `https://github.com/${project.full_name}/blob/HEAD/${source.readme_path}`,
-            content_md: translated,
-          },
-        ],
-      });
-      if (requestDelayMs > 0) await sleep(requestDelayMs);
-    } catch (error) {
-      console.warn(`Readme translate failed ${project.full_name}: ${error.message}`);
+  const pageSize = readmeTranslateBudget > 0 ? readmeTranslateBudget : (readmeTranslateLimit || 5);
+  if (pageSize <= 0) return;
+  const maxSeconds = Math.max(60, Number(process.env.README_TRANSLATE_MAX_SECONDS || "360"));
+  const startedAt = Date.now();
+  let totalProcessed = 0;
+  let consecutiveFailures = 0;
+
+  while (true) {
+    const elapsed = (Date.now() - startedAt) / 1000;
+    if (elapsed >= maxSeconds) {
+      console.log(`Readme translate: hit time budget ${maxSeconds}s, total_processed=${totalProcessed}`);
+      break;
     }
-  }
-  if (batch.length) {
+
+    const queue = await fetchReadmeQueue("translate", pageSize);
+    if (!queue.length) {
+      console.log(`Readme translate: queue drained, total_processed=${totalProcessed}`);
+      break;
+    }
+
+    console.log(`Readme translate: batch of ${queue.length} (elapsed=${Math.round(elapsed)}s, total_processed=${totalProcessed})`);
+    const batch = [];
+    for (const project of queue) {
+      if ((Date.now() - startedAt) / 1000 >= maxSeconds) break;
+      const source = project.source_readme;
+      if (!source || !source.content_md) continue;
+      try {
+        const translated = await translateReadmeToChinese(source.content_md);
+        if (!translated) continue;
+        batch.push({
+          full_name: project.full_name,
+          readmes: [
+            {
+              readme_path: source.readme_path,
+              language_code: "zh",
+              is_translated: true,
+              source_language_code: source.language_code || "en",
+              source_url: `https://github.com/${project.full_name}/blob/HEAD/${source.readme_path}`,
+              content_md: translated,
+            },
+          ],
+        });
+        if (requestDelayMs > 0) await sleep(requestDelayMs);
+      } catch (error) {
+        console.warn(`Readme translate failed ${project.full_name}: ${error.message}`);
+      }
+    }
+
+    if (!batch.length) {
+      consecutiveFailures++;
+      if (consecutiveFailures >= 3) {
+        console.warn("Readme translate: 3 empty batches in a row, bailing out");
+        break;
+      }
+      continue;
+    }
+    consecutiveFailures = 0;
+
     try {
       await postReadmes(batch);
+      totalProcessed += batch.length;
     } catch (error) {
       console.warn(`Readme translate post failed: ${error.message}`);
+      break;
     }
   }
 }

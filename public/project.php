@@ -90,7 +90,7 @@ render_header($project['full_name']);
     <?php endif; ?>
 
     <?php if (!$currentReadme): ?>
-        <div class="empty">这个项目的 README 还没被抓取到。后台 backlog 会在下一轮补跑时自动抓取；如果是英文 README，还会自动生成「强翻中文」版本。</div>
+        <div class="empty">这个项目的 README 还没被抓取到。后台 backlog 正在持续抓取未入库 README（通常几分钟内入库）；如果是英文 README，还会自动生成「强翻中文」版本。</div>
     <?php else: ?>
         <?php
         $languageLabel = '';

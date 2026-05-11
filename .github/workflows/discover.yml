@@ -97,7 +97,9 @@ jobs:
           GITHUB_SEARCH_DELAY_MS: "5000"
           GITHUB_RATE_LIMIT_RETRIES: "2"
           GITHUB_MAX_RATE_LIMIT_WAIT_MS: "60000"
-          README_FETCH_LIMIT: "10"
+          README_FETCH_LIMIT: "20"
           README_TRANSLATE_LIMIT: "5"
           README_MAX_BYTES: "40000"
+          README_FETCH_MAX_SECONDS: "480"
+          README_TRANSLATE_MAX_SECONDS: "360"
         run: node discover.js

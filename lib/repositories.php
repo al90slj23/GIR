@@ -1653,10 +1653,10 @@ function discover_setting_definitions(): array
         'discover_min_stars_topic' => ['label' => 'Topic 最低 Stars', 'type' => 'number', 'default' => '50', 'description' => '普通 topic 搜索的最低 Stars。'],
         'discover_min_stars_agent' => ['label' => 'Agent 最低 Stars', 'type' => 'number', 'default' => '30', 'description' => 'agent topic 搜索的最低 Stars。'],
         'discover_extra_queries' => ['label' => '额外搜索语句', 'type' => 'textarea', 'default' => '', 'description' => '每行一条 GitHub Search 查询，可使用 {since}。'],
-        'readme_fetch_enabled' => ['label' => '启用 README 抓取', 'type' => 'checkbox', 'default' => '1', 'description' => '每轮 backlog 会额外抓取若干个没有 README 的项目。'],
+        'readme_fetch_enabled' => ['label' => '启用 README 抓取', 'type' => 'checkbox', 'default' => '1', 'description' => '每轮 backlog 会持续抓取，直到队列清空或达到时间预算。'],
         'readme_translate_enabled' => ['label' => '启用 README 自动翻译', 'type' => 'checkbox', 'default' => '1', 'description' => '只翻译英文 README 且没有中文原版的项目，生成「强翻中文」版本。'],
-        'readme_per_run' => ['label' => '每轮 README 抓取数量', 'type' => 'number', 'default' => '10', 'description' => '每次 backlog 最多抓多少个项目的 README。'],
-        'readme_translate_per_run' => ['label' => '每轮 README 翻译数量', 'type' => 'number', 'default' => '5', 'description' => '每次 backlog 最多翻译多少个项目的 README。'],
+        'readme_per_run' => ['label' => 'README 抓取单批大小', 'type' => 'number', 'default' => '20', 'description' => '每个 fetch 批次抓多少个项目；抓完继续下一批，直到队列清空。'],
+        'readme_translate_per_run' => ['label' => 'README 翻译单批大小', 'type' => 'number', 'default' => '5', 'description' => '每个 translate 批次翻译多少个项目；翻译成本较高，保持较小。'],
         'deepseek_system_prompt' => ['label' => 'GIR 解读系统提示词', 'type' => 'textarea', 'default' => default_deepseek_system_prompt(), 'description' => '控制 GIR 解读的角色、边界和评分标准；当前模型供应商为 DeepSeek。'],
         'deepseek_task_prompt' => ['label' => 'GIR 解读任务提示词', 'type' => 'textarea', 'default' => default_deepseek_task_prompt(), 'description' => '控制每个项目解读的口吻、重点和判断方式；输出 JSON 字段结构由代码固定。'],
     ];
