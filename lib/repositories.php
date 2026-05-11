@@ -578,7 +578,9 @@ function project_with_reports(int $id): ?array
         "SELECT id, project_id, run_id, period_type, report_date, source_platform, source_tag, source_rank, source_score,
                 raw_rank_only, one_sentence, project_type, problem_text, tech_stack, target_users,
                 play_score, useful_score, maturity_score, php_fit_score, difficulty, is_suitable_for_this_host,
-                ideas_to_reuse, risks, change_note, recommendation, summary_zh, created_at
+                ideas_to_reuse, risks, change_note, change_observation, analysis_detail,
+                previous_report_id, star_growth, fork_growth, span_days,
+                recommendation, summary_zh, created_at
          FROM project_reports
          WHERE project_id = ? AND raw_rank_only = 0 AND one_sentence <> ''
          ORDER BY report_date DESC, id DESC",
@@ -966,7 +968,8 @@ function recent_project_analyses(string $fullName, int $limit = 5): array
 {
     return db_all(
         "SELECT r.report_date, r.source_platform, r.source_tag, r.one_sentence, r.summary_zh, r.change_note,
-                r.recommendation, r.play_score, r.useful_score, r.maturity_score, r.difficulty, r.created_at
+                r.recommendation, r.play_score, r.useful_score, r.maturity_score, r.difficulty, r.created_at,
+                r.star_growth, r.fork_growth, r.span_days, r.raw_ai_json
          FROM project_reports r
          INNER JOIN projects p ON p.id = r.project_id
          WHERE p.full_name = ? AND r.raw_rank_only = 0 AND r.one_sentence <> ''
@@ -2003,6 +2006,58 @@ function upsert_report(int $projectId, ?int $runId, string $periodType, string $
         [$projectId, $periodType, $reportDate, $sourcePlatform, $sourceTag]
     ) : null;
 
+    $previousReportId = null;
+    $starGrowth = null;
+    $forkGrowth = null;
+    $spanDays = null;
+    if (!$rawRankOnly) {
+        $prev = db_one(
+            "SELECT id, created_at FROM project_reports
+             WHERE project_id = ? AND raw_rank_only = 0 AND one_sentence <> ''
+             ORDER BY report_date DESC, id DESC LIMIT 1",
+            [$projectId]
+        );
+        if ($prev) {
+            $previousReportId = (int) $prev['id'];
+            // stars/forks growth需要基线，这里用 projects 当前值 - 上一版 snapshot。
+            // Snapshot 以 raw_ai_json 里 repo 数据为准，兜底为 projects.stars。
+            $prevRow = db_one("SELECT raw_ai_json FROM project_reports WHERE id = ?", [$previousReportId]);
+            $prevStars = null;
+            $prevForks = null;
+            if ($prevRow && !empty($prevRow['raw_ai_json'])) {
+                $prevPayload = json_decode((string) $prevRow['raw_ai_json'], true);
+                if (is_array($prevPayload)) {
+                    if (isset($prevPayload['repo_snapshot']['stars'])) {
+                        $prevStars = (int) $prevPayload['repo_snapshot']['stars'];
+                    }
+                    if (isset($prevPayload['repo_snapshot']['forks'])) {
+                        $prevForks = (int) $prevPayload['repo_snapshot']['forks'];
+                    }
+                }
+            }
+            $currentRow = db_one("SELECT stars, forks FROM projects WHERE id = ?", [$projectId]);
+            if ($currentRow) {
+                if ($prevStars !== null) {
+                    $starGrowth = (int) $currentRow['stars'] - $prevStars;
+                }
+                if ($prevForks !== null) {
+                    $forkGrowth = (int) $currentRow['forks'] - $prevForks;
+                }
+            }
+            $prevTime = strtotime((string) $prev['created_at']);
+            if ($prevTime) {
+                $spanDays = max(0, (int) floor((time() - $prevTime) / 86400));
+            }
+        }
+    }
+
+    $changeObservation = isset($analysis['change_observation']) && is_array($analysis['change_observation'])
+        ? json_encode($analysis['change_observation'], JSON_UNESCAPED_UNICODE)
+        : '';
+    $analysisDetail = isset($analysis['project_profile']) && is_array($analysis['project_profile'])
+        ? json_encode($analysis['project_profile'], JSON_UNESCAPED_UNICODE)
+        : '';
+
     $params = [
         $runId ?: null,
         $sourceRank,
@@ -2021,6 +2076,12 @@ function upsert_report(int $projectId, ?int $runId, string $periodType, string $
         list_to_text($analysis['ideas_to_reuse'] ?? ''),
         list_to_text($analysis['risks'] ?? ''),
         truncate_text($analysis['change_note'] ?? '', 5000),
+        $changeObservation,
+        $analysisDetail,
+        $previousReportId,
+        $starGrowth,
+        $forkGrowth,
+        $spanDays,
         normalize_recommendation($analysis['recommendation'] ?? ''),
         truncate_text($analysis['summary_zh'] ?? '', 10000),
         $raw,
@@ -2032,7 +2093,9 @@ function upsert_report(int $projectId, ?int $runId, string $periodType, string $
             'UPDATE project_reports
              SET run_id = ?, source_rank = ?, source_score = ?, one_sentence = ?, project_type = ?, problem_text = ?, tech_stack = ?, target_users = ?,
                  play_score = ?, useful_score = ?, maturity_score = ?, php_fit_score = ?, difficulty = ?, is_suitable_for_this_host = ?,
-                 ideas_to_reuse = ?, risks = ?, change_note = ?, recommendation = ?, summary_zh = ?, raw_ai_json = ?, raw_rank_only = 1
+                 ideas_to_reuse = ?, risks = ?, change_note = ?, change_observation = ?, analysis_detail = ?,
+                 previous_report_id = ?, star_growth = ?, fork_growth = ?, span_days = ?,
+                 recommendation = ?, summary_zh = ?, raw_ai_json = ?, raw_rank_only = 1
              WHERE id = ?',
             $params
         );
@@ -2048,8 +2111,9 @@ function upsert_report(int $projectId, ?int $runId, string $periodType, string $
          (project_id, period_type, report_date, source_platform, source_tag, run_id, source_rank, source_score,
           raw_rank_only, one_sentence, project_type, problem_text, tech_stack, target_users,
           play_score, useful_score, maturity_score, php_fit_score, difficulty, is_suitable_for_this_host, ideas_to_reuse, risks,
-          change_note, recommendation, summary_zh, raw_ai_json, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          change_note, change_observation, analysis_detail, previous_report_id, star_growth, fork_growth, span_days,
+          recommendation, summary_zh, raw_ai_json, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         $params
     );
 }
@@ -2139,11 +2203,12 @@ function upsert_project_readme(int $projectId, array $row): int
         $content = substr($content, 0, 80000);
     }
     $content = strip_mysql_utf8_unsupported($content);
+    $contentMd5 = $content !== '' ? md5($content) : '';
     $fetchedAt = normalize_datetime($row['fetched_at'] ?? null) ?: date('Y-m-d H:i:s');
     $now = date('Y-m-d H:i:s');
 
     $existing = db_one(
-        'SELECT id FROM project_readmes
+        'SELECT id, content_md5 FROM project_readmes
          WHERE project_id = ? AND readme_path = ? AND language_code = ? AND is_translated = ?',
         [$projectId, $readmePath, $languageCode, $isTranslated]
     );
@@ -2151,9 +2216,9 @@ function upsert_project_readme(int $projectId, array $row): int
     if ($existing) {
         db_exec(
             'UPDATE project_readmes
-             SET source_url = ?, source_language_code = ?, content_md = ?, fetched_at = ?, updated_at = ?
+             SET source_url = ?, source_language_code = ?, content_md = ?, content_md5 = ?, fetched_at = ?, updated_at = ?
              WHERE id = ?',
-            [$sourceUrl, $sourceLanguageCode, $content, $fetchedAt, $now, (int) $existing['id']]
+            [$sourceUrl, $sourceLanguageCode, $content, $contentMd5, $fetchedAt, $now, (int) $existing['id']]
         );
         return (int) $existing['id'];
     }
@@ -2161,8 +2226,8 @@ function upsert_project_readme(int $projectId, array $row): int
     db_exec(
         'INSERT INTO project_readmes
          (project_id, readme_path, language_code, source_url, is_translated, source_language_code,
-          content_md, fetched_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          content_md, content_md5, fetched_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [
             $projectId,
             $readmePath,
@@ -2171,6 +2236,7 @@ function upsert_project_readme(int $projectId, array $row): int
             $isTranslated,
             $sourceLanguageCode,
             $content,
+            $contentMd5,
             $fetchedAt,
             $now,
             $now,

@@ -131,6 +131,22 @@ render_header($project['full_name']);
     ?>
 
     <?php if ($latestReport): ?>
+    <?php
+    $latestChangeObs = [];
+    if (!empty($latestReport['change_observation'])) {
+        $decoded = json_decode((string) $latestReport['change_observation'], true);
+        if (is_array($decoded)) $latestChangeObs = $decoded;
+    }
+    $latestProfile = [];
+    if (!empty($latestReport['analysis_detail'])) {
+        $decoded = json_decode((string) $latestReport['analysis_detail'], true);
+        if (is_array($decoded)) $latestProfile = $decoded;
+    }
+    $latestHasPrev = !empty($latestChangeObs['has_previous']);
+    $latestStarGrowth = $latestReport['star_growth'] ?? null;
+    $latestForkGrowth = $latestReport['fork_growth'] ?? null;
+    $latestSpanDays = $latestReport['span_days'] ?? null;
+    ?>
     <section class="panel">
         <div class="section-head">
             <div>
@@ -144,8 +160,63 @@ render_header($project['full_name']);
             <span class="<?= h(badge_class($latestReport['recommendation'])) ?>"><?= h($latestReport['recommendation']) ?></span>
         </div>
         <p class="desc"><?= h($latestReport['one_sentence']) ?></p>
-        <?php if (!empty($latestReport['change_note'])): ?>
+
+        <?php if ($latestHasPrev || $latestStarGrowth !== null): ?>
+            <div class="change-card">
+                <h3>变化观察</h3>
+                <div class="change-metrics">
+                    <?php if ($latestStarGrowth !== null): ?>
+                        <span class="change-metric"><strong><?= ((int) $latestStarGrowth) >= 0 ? '+' : '' ?><?= number_format((int) $latestStarGrowth) ?></strong><em>Stars 增长</em></span>
+                    <?php endif; ?>
+                    <?php if ($latestForkGrowth !== null): ?>
+                        <span class="change-metric"><strong><?= ((int) $latestForkGrowth) >= 0 ? '+' : '' ?><?= number_format((int) $latestForkGrowth) ?></strong><em>Forks 增长</em></span>
+                    <?php endif; ?>
+                    <?php if ($latestSpanDays !== null): ?>
+                        <span class="change-metric"><strong><?= (int) $latestSpanDays ?> 天</strong><em>距上次解读</em></span>
+                    <?php endif; ?>
+                    <?php if (!empty($latestChangeObs['growth_intensity'])): ?>
+                        <span class="change-metric"><strong><?= h((string) $latestChangeObs['growth_intensity']) ?></strong><em>热度强度</em></span>
+                    <?php endif; ?>
+                </div>
+                <?php if (!empty($latestChangeObs['what_changed'])): ?>
+                    <div class="text-block"><strong>变化：</strong><?= h((string) $latestChangeObs['what_changed']) ?></div>
+                <?php endif; ?>
+                <?php if (!empty($latestChangeObs['why_it_matters'])): ?>
+                    <div class="text-block"><strong>意义：</strong><?= h((string) $latestChangeObs['why_it_matters']) ?></div>
+                <?php endif; ?>
+            </div>
+        <?php endif; ?>
+
+        <?php if ($latestProfile): ?>
+            <div class="profile-card">
+                <h3>项目画像</h3>
+                <?php foreach ([
+                    'what_it_does' => '项目做什么',
+                    'who_it_is_for' => '适合谁用',
+                    'architecture_or_stack' => '技术栈与架构',
+                    'typical_workflow' => '典型上手流程',
+                    'risks_and_caveats' => '风险与注意事项',
+                ] as $key => $label): ?>
+                    <?php if (!empty($latestProfile[$key])): ?>
+                        <h4><?= h($label) ?></h4>
+                        <div class="text-block"><?= h((string) $latestProfile[$key]) ?></div>
+                    <?php endif; ?>
+                <?php endforeach; ?>
+                <?php if (!empty($latestProfile['standout_features']) && is_array($latestProfile['standout_features'])): ?>
+                    <h4>亮点与特色</h4>
+                    <ul class="profile-list">
+                        <?php foreach ($latestProfile['standout_features'] as $feature): ?>
+                            <li><?= h((string) $feature) ?></li>
+                        <?php endforeach; ?>
+                    </ul>
+                <?php endif; ?>
+            </div>
+        <?php elseif (!empty($latestReport['change_note'])): ?>
             <div class="text-block"><?= h($latestReport['change_note']) ?></div>
+        <?php endif; ?>
+
+        <?php if (!empty($latestReport['summary_zh'])): ?>
+            <div class="text-block"><?= h($latestReport['summary_zh']) ?></div>
         <?php endif; ?>
     </section>
     <?php endif; ?>
@@ -169,6 +240,18 @@ render_header($project['full_name']);
         <?php else: ?>
             <div class="timeline">
                 <?php foreach ($reports as $index => $report): ?>
+                    <?php
+                    $histChangeObs = [];
+                    if (!empty($report['change_observation'])) {
+                        $decoded = json_decode((string) $report['change_observation'], true);
+                        if (is_array($decoded)) $histChangeObs = $decoded;
+                    }
+                    $histProfile = [];
+                    if (!empty($report['analysis_detail'])) {
+                        $decoded = json_decode((string) $report['analysis_detail'], true);
+                        if (is_array($decoded)) $histProfile = $decoded;
+                    }
+                    ?>
                     <article class="timeline-item">
                         <div class="timeline-marker"><?= count($reports) - $index ?></div>
                         <div class="timeline-body">
@@ -191,11 +274,52 @@ render_header($project['full_name']);
                                 <span class="score">难度 <?= h($report['difficulty']) ?></span>
                             </div>
                             <p class="desc"><?= h($report['one_sentence']) ?></p>
-                            <?php if (!empty($report['change_note'])): ?>
+                            <?php if (!empty($histChangeObs['what_changed']) || $report['star_growth'] !== null): ?>
+                                <h2>变化观察</h2>
+                                <div class="muted">
+                                    <?php if ($report['star_growth'] !== null): ?>
+                                        Stars <?= ((int) $report['star_growth']) >= 0 ? '+' : '' ?><?= number_format((int) $report['star_growth']) ?>
+                                    <?php endif; ?>
+                                    <?php if ($report['fork_growth'] !== null): ?>
+                                        · Forks <?= ((int) $report['fork_growth']) >= 0 ? '+' : '' ?><?= number_format((int) $report['fork_growth']) ?>
+                                    <?php endif; ?>
+                                    <?php if ($report['span_days'] !== null): ?>
+                                        · 距上次 <?= (int) $report['span_days'] ?> 天
+                                    <?php endif; ?>
+                                </div>
+                                <?php if (!empty($histChangeObs['what_changed'])): ?>
+                                    <div class="text-block"><?= h((string) $histChangeObs['what_changed']) ?></div>
+                                <?php endif; ?>
+                                <?php if (!empty($histChangeObs['why_it_matters'])): ?>
+                                    <div class="text-block"><?= h((string) $histChangeObs['why_it_matters']) ?></div>
+                                <?php endif; ?>
+                            <?php elseif (!empty($report['change_note'])): ?>
                                 <h2>变化观察</h2>
                                 <div class="text-block"><?= h($report['change_note']) ?></div>
                             <?php endif; ?>
-                            <?php if (!empty($report['summary_zh'])): ?>
+                            <?php if ($histProfile): ?>
+                                <h2>项目画像</h2>
+                                <?php foreach ([
+                                    'what_it_does' => '项目做什么',
+                                    'who_it_is_for' => '适合谁用',
+                                    'architecture_or_stack' => '技术栈与架构',
+                                    'typical_workflow' => '典型上手流程',
+                                    'risks_and_caveats' => '风险与注意事项',
+                                ] as $key => $label): ?>
+                                    <?php if (!empty($histProfile[$key])): ?>
+                                        <h3><?= h($label) ?></h3>
+                                        <div class="text-block"><?= h((string) $histProfile[$key]) ?></div>
+                                    <?php endif; ?>
+                                <?php endforeach; ?>
+                                <?php if (!empty($histProfile['standout_features']) && is_array($histProfile['standout_features'])): ?>
+                                    <h3>亮点与特色</h3>
+                                    <ul class="profile-list">
+                                        <?php foreach ($histProfile['standout_features'] as $feature): ?>
+                                            <li><?= h((string) $feature) ?></li>
+                                        <?php endforeach; ?>
+                                    </ul>
+                                <?php endif; ?>
+                            <?php elseif (!empty($report['summary_zh'])): ?>
                                 <h2>中文总结</h2>
                                 <div class="text-block"><?= h($report['summary_zh']) ?></div>
                             <?php endif; ?>

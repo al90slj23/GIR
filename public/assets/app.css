@@ -1559,3 +1559,15 @@ select {
 .markdown-body table th, .markdown-body table td { border: 1px solid var(--border-color, #2a3340); padding: 6px 12px; }
 .markdown-body table th { background: var(--code-bg, rgba(110, 118, 129, 0.12)); }
 .markdown-body hr { border: none; border-top: 1px solid var(--border-color, #2a3340); margin: 20px 0; }
+
+
+/* Change observation + project profile cards */
+.change-card, .profile-card { margin: 16px 0; padding: 16px 18px; border: 1px solid var(--border-color, #2a3340); border-radius: 8px; background: var(--code-bg, rgba(110, 118, 129, 0.08)); }
+.change-card h3, .profile-card h3 { margin: 0 0 12px; font-size: 16px; font-weight: 600; color: var(--accent-color, #93c5fd); }
+.change-card h4, .profile-card h4 { margin: 14px 0 6px; font-size: 14px; font-weight: 600; }
+.change-metrics { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.change-metric { display: flex; flex-direction: column; padding: 8px 12px; background: var(--card-bg, rgba(59, 130, 246, 0.08)); border-radius: 6px; min-width: 90px; }
+.change-metric strong { font-size: 18px; color: var(--accent-color, #93c5fd); }
+.change-metric em { font-style: normal; font-size: 12px; color: var(--muted-color, #94a3b8); margin-top: 2px; }
+.profile-list { padding-left: 22px; margin: 6px 0; }
+.profile-list li { margin: 4px 0; }

@@ -77,6 +77,12 @@ $reportMigrations = [
     'raw_rank_only' => "ALTER TABLE project_reports ADD COLUMN raw_rank_only TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER source_score",
     'maturity_score' => "ALTER TABLE project_reports ADD COLUMN maturity_score TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER useful_score",
     'change_note' => "ALTER TABLE project_reports ADD COLUMN change_note TEXT AFTER risks",
+    'change_observation' => "ALTER TABLE project_reports ADD COLUMN change_observation MEDIUMTEXT AFTER change_note",
+    'analysis_detail' => "ALTER TABLE project_reports ADD COLUMN analysis_detail MEDIUMTEXT AFTER change_observation",
+    'previous_report_id' => "ALTER TABLE project_reports ADD COLUMN previous_report_id INT UNSIGNED DEFAULT NULL AFTER analysis_detail",
+    'star_growth' => "ALTER TABLE project_reports ADD COLUMN star_growth INT DEFAULT NULL AFTER previous_report_id",
+    'fork_growth' => "ALTER TABLE project_reports ADD COLUMN fork_growth INT DEFAULT NULL AFTER star_growth",
+    'span_days' => "ALTER TABLE project_reports ADD COLUMN span_days INT DEFAULT NULL AFTER fork_growth",
 ];
 foreach ($reportMigrations as $column => $statement) {
     if (!isset($existingReportColumns[$column]) && !db()->query($statement)) {
@@ -127,6 +133,26 @@ $reportIndexes = [
 foreach ($reportIndexes as $index => $statement) {
     if (!isset($existingReportIndexes[$index]) && !db()->query($statement)) {
         $errors[] = db()->error;
+    }
+}
+
+// project_readmes migrations
+$readmeTableExists = (bool) db_one("SHOW TABLES LIKE 'project_readmes'");
+if ($readmeTableExists) {
+    $readmeColumnsRows = db_all('SHOW COLUMNS FROM project_readmes');
+    $existingReadmeColumns = [];
+    foreach ($readmeColumnsRows as $column) {
+        if (isset($column['Field'])) {
+            $existingReadmeColumns[$column['Field']] = true;
+        }
+    }
+    $readmeMigrations = [
+        'content_md5' => "ALTER TABLE project_readmes ADD COLUMN content_md5 CHAR(32) NOT NULL DEFAULT '' AFTER content_md",
+    ];
+    foreach ($readmeMigrations as $column => $statement) {
+        if (!isset($existingReadmeColumns[$column]) && !db()->query($statement)) {
+            $errors[] = db()->error;
+        }
     }
 }
 

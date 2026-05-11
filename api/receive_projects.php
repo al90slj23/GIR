@@ -12,6 +12,7 @@ $runType = isset($payload['run_type']) ? (string) $payload['run_type'] : 'daily'
 $periodType = isset($payload['period_type']) ? (string) $payload['period_type'] : $runType;
 $reportDate = isset($payload['report_date']) ? (string) $payload['report_date'] : date('Y-m-d');
 $projects = isset($payload['projects']) && is_array($payload['projects']) ? $payload['projects'] : [];
+$markRefreshed = !empty($payload['mark_refreshed']);
 
 if (!in_array($periodType, ['daily', 'weekly', 'manual'], true)) {
     json_response(['ok' => false, 'error' => 'invalid_period_type'], 400);
@@ -55,6 +56,9 @@ foreach ($projects as $index => $item) {
     $stored++;
     if (!$rawRankOnly && $analysis) {
         $analyzed++;
+    }
+    if ($markRefreshed) {
+        db_exec('UPDATE projects SET last_full_refresh_at = ? WHERE id = ?', [date('Y-m-d H:i:s'), $projectId]);
     }
 }
 

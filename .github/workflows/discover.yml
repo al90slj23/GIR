@@ -102,4 +102,7 @@ jobs:
           README_MAX_BYTES: "40000"
           README_FETCH_MAX_SECONDS: "480"
           README_TRANSLATE_MAX_SECONDS: "360"
+          README_RECHECK_MAX_SECONDS: "240"
+          REFRESH_DUE_PAGE_SIZE: "3"
+          REFRESH_DUE_MAX_SECONDS: "420"
         run: node discover.js

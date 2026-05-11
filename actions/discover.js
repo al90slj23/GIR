@@ -825,7 +825,7 @@ async function getReadme(repo) {
 function defaultSystemPrompt() {
   return [
     "你是一个帮助站长发现 GitHub 新项目的技术分析员。",
-    "你的目标是把项目讲成人能快速理解的中文：它做什么、为什么值得关注、适合谁、怎么用、有什么可借鉴点。",
+    "你的目标是把项目讲成人能快速理解的中文：它做什么、为什么值得关注、适合谁、怎么用、有什么可借鉴点；解读要**充分、具体、有信息量**，不要只写一句话。",
     "不要把本站运行环境或某个特定技术栈当作通用评价标准；除非输入明确要求，否则不要把部署条件作为主要结论。",
     "你必须用中文输出严格 JSON，不要 Markdown，不要解释。",
     "评分为 1 到 10 的整数。",
@@ -833,11 +833,31 @@ function defaultSystemPrompt() {
     "useful_score 衡量项目是否解决真实问题、是否有明确使用价值。",
     "maturity_score 衡量项目成熟度，综合 Stars、Forks、最近更新、文档完整度和社区活跃度。",
     "difficulty 衡量理解、部署、改造或复刻成本，只能输出 低、中、高。",
+    "如果输入里有 previous_analyses（历史解说）或 repo_deltas（数值变化），必须在 change_observation 字段里认真对比并给出观察；否则 has_previous 置 false。",
   ].join("\n");
 }
 
 function defaultTaskPrompt() {
-  return "为这次榜单命中生成一条新的中文解说。即使历史里已经分析过同一个项目，也不要复用旧文案；请结合最近几次解说，判断这次是否有新功能、热度变化、定位变化或值得重新关注的原因。表达要说人话，避免空泛夸奖，重点说明：项目一句话用途、解决的真实问题、为什么上榜或变热、适合谁用、上手方式或可借鉴点、主要风险。不要默认围绕部署条件评价项目，也不要因为项目依赖较多或运行门槛较高就直接给出“暂不关注”；只有当部署门槛会明显影响目标用户采用时，才在风险里简短说明。";
+  return [
+    "请围绕这个项目生成一份**完整、结构化、内容充实**的中文解读，分两层：",
+    "",
+    "1. change_observation：时间序列对比",
+    "   - 如果 previous_analyses 或 repo_deltas 里提供了上一次解读和数值（stars/forks 增长、跨度天数），必须据此写出：",
+    "     * 热度变化（涨势/跌势/稳定，配合绝对数字）",
+    "     * 定位或功能上的变化（从上次解读到现在是否新增了功能板块、重大版本、架构调整、README 新章节等）",
+    "     * 这次是否值得重新关注的理由",
+    "   - 如果没有 previous_analyses（首次解读），把 has_previous 置 false，其他字段给合理默认值或空字符串。",
+    "",
+    "2. project_profile：项目画像（详细版本）",
+    "   - what_it_does：项目做什么，3 到 5 句话，不要一句带过",
+    "   - who_it_is_for：具体谁会用，用什么场景",
+    "   - architecture_or_stack：技术栈和关键架构特点",
+    "   - standout_features：3 到 6 条值得关注的功能、特色或亮点",
+    "   - typical_workflow：用户从零到用起来的典型上手流程或用法示例",
+    "   - risks_and_caveats：可能踩坑的地方、依赖门槛、license 风险、社区活跃度等",
+    "",
+    "表达要说人话，避免空泛夸奖。不要默认围绕部署条件评价项目，也不要因为项目依赖较多或运行门槛较高就直接给出\"暂不关注\"；只有当部署门槛会明显影响目标用户采用时，才在 risks_and_caveats 里简短说明。",
+  ].join("\n");
 }
 
 function systemPrompt(config) {
@@ -861,11 +881,39 @@ function compactHistory(history) {
   }));
 }
 
+function computeRepoDeltas(repo, history) {
+  if (!history || !history.length) {
+    return { has_previous: false };
+  }
+  const prev = history[0];
+  let prevSnap = prev.repo_snapshot || null;
+  if (!prevSnap && prev.raw_ai_json) {
+    try {
+      const parsed = JSON.parse(prev.raw_ai_json);
+      if (parsed && parsed.repo_snapshot) prevSnap = parsed.repo_snapshot;
+    } catch {}
+  }
+  const prevStars = prevSnap && typeof prevSnap.stars === "number" ? prevSnap.stars : null;
+  const prevForks = prevSnap && typeof prevSnap.forks === "number" ? prevSnap.forks : null;
+  const prevTime = prev.created_at ? Date.parse(prev.created_at) : null;
+  const spanDays = prevTime ? Math.max(0, Math.floor((Date.now() - prevTime) / 86400000)) : null;
+  return {
+    has_previous: true,
+    previous_report_date: prev.report_date || null,
+    previous_created_at: prev.created_at || null,
+    span_days: spanDays,
+    star_growth: prevStars !== null ? (Number(repo.stargazers_count || 0) - prevStars) : null,
+    fork_growth: prevForks !== null ? (Number(repo.forks_count || 0) - prevForks) : null,
+    current_stars: Number(repo.stargazers_count || 0),
+    current_forks: Number(repo.forks_count || 0),
+  };
+}
+
 function userPrompt(repo, readme, history = [], config = defaultConfig) {
   return JSON.stringify({
     task: String(config.deepseek_task_prompt || defaultTaskPrompt()).trim() || defaultTaskPrompt(),
     required_schema: {
-      one_sentence: "一句话介绍",
+      one_sentence: "一句话介绍（保留，作为 header）",
       project_type: "工具/框架/游戏/Agent/UI/后端/数据集/其他",
       problem: "解决什么问题",
       tech_stack: ["主要技术栈"],
@@ -876,9 +924,23 @@ function userPrompt(repo, readme, history = [], config = defaultConfig) {
       difficulty: "低/中/高",
       ideas_to_reuse: ["可借鉴点"],
       risks: ["风险点"],
-      change_note: "结合 previous_analyses 写出本次相对最近几次解说的变化观察；如果没有明显变化，也要说明没有明显变化以及本次仍值得或不值得关注的原因",
+      change_note: "本次解读相对上次的总体变化一句话总结（没变化则说无明显变化）",
+      change_observation: {
+        has_previous: "true/false",
+        growth_intensity: "低/中/高（基于 repo_deltas.star_growth 和 span_days）",
+        what_changed: "README 新章节 / 新功能板块 / 定位变化等具体描述",
+        why_it_matters: "对用户决定是否重新关注的影响",
+      },
+      project_profile: {
+        what_it_does: "3-5 句话详细说明",
+        who_it_is_for: "具体谁会用，什么场景",
+        architecture_or_stack: "技术栈和关键架构特点",
+        standout_features: ["亮点 1", "亮点 2", "亮点 3"],
+        typical_workflow: "从零到用起来的流程",
+        risks_and_caveats: "依赖/license/活跃度等风险",
+      },
       recommendation: "收藏/研究/可复刻/暂不关注",
-      summary_zh: "中文总结",
+      summary_zh: "中文总结（通用介绍段，可以比 one_sentence 长一些）",
     },
     repo: {
       full_name: repo.full_name,
@@ -889,6 +951,12 @@ function userPrompt(repo, readme, history = [], config = defaultConfig) {
       topics: repo.topics || [],
       html_url: repo.html_url,
     },
+    repo_snapshot: {
+      stars: Number(repo.stargazers_count || 0),
+      forks: Number(repo.forks_count || 0),
+      pushed_at: repo.pushed_at || null,
+    },
+    repo_deltas: computeRepoDeltas(repo, history),
     previous_analyses: compactHistory(history).slice(0, 5),
     readme,
   });
@@ -1458,6 +1526,77 @@ async function runReadmeRecheckZhPass() {
   }
 }
 
+async function fetchReadmeMd5ForProject(fullName) {
+  const url = deriveReadmeQueueUrl();
+  if (!url) return {};
+  try {
+    const res = await fetchWithTimeout(`${url}?mode=translate&limit=1&full_name=${encodeURIComponent(fullName)}`, {
+      headers: {
+        "Accept": "application/json",
+        "Authorization": `Bearer ${env.ingestToken}`,
+        "User-Agent": "GIR-Discover",
+      },
+    }, 15000);
+    if (!res.ok) return {};
+    return res.json();
+  } catch {
+    return {};
+  }
+}
+
+async function runRefreshDuePass(config) {
+  const pageSize = Math.max(1, Math.min(20, Number(process.env.REFRESH_DUE_PAGE_SIZE || "3")));
+  const maxSeconds = Math.max(60, Number(process.env.REFRESH_DUE_MAX_SECONDS || "420"));
+  const startedAt = Date.now();
+  let totalProcessed = 0;
+
+  while (true) {
+    const elapsed = (Date.now() - startedAt) / 1000;
+    if (elapsed >= maxSeconds) {
+      console.log(`Refresh_due: hit time budget ${maxSeconds}s, total_processed=${totalProcessed}`);
+      break;
+    }
+    const queue = await fetchReadmeQueue("refresh_due", pageSize);
+    if (!queue.length) {
+      console.log(`Refresh_due: queue drained, total_processed=${totalProcessed}`);
+      break;
+    }
+    console.log(`Refresh_due: batch of ${queue.length} (elapsed=${Math.round(elapsed)}s, total_processed=${totalProcessed})`);
+
+    for (const project of queue) {
+      if ((Date.now() - startedAt) / 1000 >= maxSeconds) break;
+      try {
+        const fullName = project.full_name;
+        const repo = await repoDetails(fullName);
+        if (!repo) {
+          console.warn(`Refresh_due: repo unavailable ${fullName}`);
+          continue;
+        }
+        repo.source_platform = "backfill";
+        repo.source_tag = "all_projects";
+        repo.source_rank = 0;
+        repo.source_score = scoreRepo(repo);
+
+        const readmes = await collectProjectReadmes(fullName);
+        if (readmes.length) {
+          await postReadmes([{ full_name: fullName, readmes }]);
+        }
+
+        const history = await fetchProjectHistory(fullName);
+        const enReadme = readmes.find((r) => r.language_code === "en" && !r.is_translated);
+        const zhReadme = readmes.find((r) => !r.is_translated && String(r.language_code || "").startsWith("zh"));
+        const sourceForAnalysis = zhReadme ? zhReadme.content_md : (enReadme ? enReadme.content_md : "");
+        const analysis = await analyze(repo, sourceForAnalysis, history, config);
+        await ingest([projectPayload(repo, analysis)], 1, { mark_refreshed: true });
+        totalProcessed++;
+        if (requestDelayMs > 0) await sleep(requestDelayMs);
+      } catch (error) {
+        console.warn(`Refresh_due failed ${project.full_name}: ${error.message}`);
+      }
+    }
+  }
+}
+
 async function analyze(repo, readme, history = [], config = defaultConfig) {
   const res = await fetchWithTimeout(`${env.deepseekBaseUrl.replace(/\/$/, "")}/v1/chat/completions`, {
     method: "POST",
@@ -1483,13 +1622,13 @@ async function analyze(repo, readme, history = [], config = defaultConfig) {
   return JSON.parse(content);
 }
 
-async function ingestBatch(projects) {
-  const payload = {
+async function ingestBatch(projects, extraPayload = {}) {
+  const payload = Object.assign({
     run_type: runType,
     period_type: periodType,
     report_date: today,
     projects,
-  };
+  }, extraPayload || {});
   const form = new URLSearchParams();
   form.set("payload_b64", Buffer.from(JSON.stringify(payload), "utf8").toString("base64"));
 
@@ -1508,9 +1647,9 @@ async function ingestBatch(projects) {
   console.log(text);
 }
 
-async function ingest(projects, batchSize = ingestBatchSize) {
+async function ingest(projects, batchSize = ingestBatchSize, extraPayload = {}) {
   for (let index = 0; index < projects.length; index += batchSize) {
-    await ingestBatch(projects.slice(index, index + batchSize));
+    await ingestBatch(projects.slice(index, index + batchSize), extraPayload);
     if (ingestDelayMs > 0 && index + batchSize < projects.length) {
       await sleep(ingestDelayMs);
     }
@@ -1518,6 +1657,16 @@ async function ingest(projects, batchSize = ingestBatchSize) {
 }
 
 function projectPayload(repo, analysis) {
+  const enriched = typeof analysis === "object" && analysis !== null
+    ? {
+        ...analysis,
+        repo_snapshot: {
+          stars: Number(repo.stargazers_count || 0),
+          forks: Number(repo.forks_count || 0),
+          pushed_at: repo.pushed_at || null,
+        },
+      }
+    : analysis;
   return {
     github_id: repo.id,
     name: repo.name,
@@ -1533,7 +1682,7 @@ function projectPayload(repo, analysis) {
     source_tag: repo.source_tag || "综合",
     source_rank: repo.source_rank || 0,
     source_score: repo.source_score || 0,
-    analysis,
+    analysis: enriched,
   };
 }
 
@@ -1555,6 +1704,7 @@ async function main() {
       readmeTranslateBudget = Math.max(0, Math.min(readmeTranslateLimit, Number(config.readme_translate_per_run ?? readmeTranslateLimit)));
       await runReadmeTranslatePass();
     }
+    await runRefreshDuePass(config);
     return;
   }
   if (periodType === "daily" && config.daily_enabled === false) {
