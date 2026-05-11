@@ -953,17 +953,30 @@ async function fetchBackfillProjectsPage(offset, limit) {
   if (backlogPendingOnly) {
     url.searchParams.set("pending_only", "1");
   }
-  const res = await fetchWithTimeout(url.toString(), {
-    headers: {
-      "Accept": "application/json",
-      "Authorization": `Bearer ${env.ingestToken}`,
-      "User-Agent": "GIR-Discover",
-    },
-  }, 60000);
-  if (!res.ok) {
-    throw new Error(`Backfill projects ${res.status}: ${await res.text()}`);
+  const maxAttempts = 4;
+  let lastError = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await fetchWithTimeout(url.toString(), {
+        headers: {
+          "Accept": "application/json",
+          "Authorization": `Bearer ${env.ingestToken}`,
+          "User-Agent": "GIR-Discover",
+        },
+      }, 60000);
+      if (!res.ok) {
+        throw new Error(`Backfill projects ${res.status}: ${await res.text()}`);
+      }
+      return await res.json();
+    } catch (error) {
+      lastError = error;
+      if (attempt >= maxAttempts) break;
+      const waitMs = 3000 * attempt;
+      console.warn(`Backfill projects attempt ${attempt}/${maxAttempts} failed: ${error?.message || error}; retrying in ${waitMs}ms`);
+      await sleep(waitMs);
+    }
   }
-  return res.json();
+  throw lastError || new Error("Backfill projects failed");
 }
 
 function resolvedBackfillLimit(config) {
