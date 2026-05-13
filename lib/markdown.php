@@ -90,7 +90,8 @@ function render_markdown_html(string $markdown, string $fullName, string $branch
     }
     $rewritten = markdown_rewrite_relative_urls($markdown, $fullName, $branch);
     $parser = new Parsedown();
-    $parser->setSafeMode(true);
+    $parser->setSafeMode(false);
+    $parser->setMarkupEscaped(false);
     $parser->setBreaksEnabled(false);
     $parser->setUrlsLinked(true);
     $html = $parser->text($rewritten);
@@ -126,6 +127,12 @@ function render_markdown_html(string $markdown, string $fullName, string $branch
         },
         $html
     );
+
+    // Strip dangerous tags (script, iframe, object, embed, form, input, style with expressions)
+    $html = preg_replace('/<\s*(script|iframe|object|embed|form|input|textarea|button|select|meta|link)\b[^>]*>.*?<\s*\/\s*\1\s*>/is', '', $html);
+    $html = preg_replace('/<\s*(script|iframe|object|embed|form|input|textarea|button|select|meta|link)\b[^>]*\/?>/i', '', $html);
+    // Strip on* event handlers
+    $html = preg_replace('/\s+on\w+\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)/i', '', $html);
 
     return $html;
 }
