@@ -2193,15 +2193,20 @@ function upsert_project_readme(int $projectId, array $row): int
     $sourceLanguageCode = truncate_text($row['source_language_code'] ?? '', 32);
     $sourceUrl = truncate_text($row['source_url'] ?? '', 500);
     $content = (string) ($row['content_md'] ?? '');
-    if (function_exists('mb_strlen') && mb_strlen($content, 'UTF-8') > 40000) {
-        $content = mb_substr($content, 0, 40000, 'UTF-8');
-    } elseif (strlen($content) > 80000) {
-        $content = substr($content, 0, 80000);
+    if (function_exists('mb_strlen') && mb_strlen($content, 'UTF-8') > 200000) {
+        $content = mb_substr($content, 0, 200000, 'UTF-8');
+    } elseif (strlen($content) > 400000) {
+        $content = substr($content, 0, 400000);
     }
     $content = strip_mysql_utf8_unsupported($content);
     $contentMd5 = $content !== '' ? md5($content) : '';
     $fetchedAt = normalize_datetime($row['fetched_at'] ?? null) ?: date('Y-m-d H:i:s');
     $now = date('Y-m-d H:i:s');
+
+    if ($content !== '') {
+        readme_cache_write($projectId, $languageCode, (bool) $isTranslated, $content);
+        readme_cache_maybe_evict();
+    }
 
     $existing = db_one(
         'SELECT id, content_md5 FROM project_readmes
@@ -2209,12 +2214,15 @@ function upsert_project_readme(int $projectId, array $row): int
         [$projectId, $readmePath, $languageCode, $isTranslated]
     );
 
+    // DB stores only metadata; content lives in the file cache.
+    $emptyContentForDb = '';
+
     if ($existing) {
         db_exec(
             'UPDATE project_readmes
              SET source_url = ?, source_language_code = ?, content_md = ?, content_md5 = ?, fetched_at = ?, updated_at = ?
              WHERE id = ?',
-            [$sourceUrl, $sourceLanguageCode, $content, $contentMd5, $fetchedAt, $now, (int) $existing['id']]
+            [$sourceUrl, $sourceLanguageCode, $emptyContentForDb, $contentMd5, $fetchedAt, $now, (int) $existing['id']]
         );
         return (int) $existing['id'];
     }
@@ -2231,7 +2239,7 @@ function upsert_project_readme(int $projectId, array $row): int
             $sourceUrl,
             $isTranslated,
             $sourceLanguageCode,
-            $content,
+            $emptyContentForDb,
             $contentMd5,
             $fetchedAt,
             $now,
@@ -2322,4 +2330,79 @@ function readme_pending_projects(int $limit, bool $translateOnly = false): array
                 LIMIT ' . $limit;
     }
     return db_all($sql);
+}
+
+
+/**
+ * Resolve the rendered markdown content for a README row. Tries the file
+ * cache first; if missing or expired, fetches from raw.githubusercontent.com
+ * (only for non-translated rows; translated rows must come from cache).
+ *
+ * Returns the markdown string. Persists newly fetched content into both
+ * the file cache and (optionally) updates the DB metadata.
+ */
+function readme_resolve_content(array $project, array $row, string $view = ''): string
+{
+    $projectId = (int) ($row['project_id'] ?? $project['id'] ?? 0);
+    $languageCode = (string) ($row['language_code'] ?? 'en');
+    $isTranslated = !empty($row['is_translated']);
+    $cached = readme_cache_read($projectId, $languageCode, $isTranslated);
+    $ttl = readme_cache_ttl_seconds();
+    $age = readme_cache_age_seconds($projectId, $languageCode, $isTranslated);
+    $cacheFresh = $cached !== null && ($age === null || $age <= $ttl);
+
+    if ($cacheFresh) {
+        return $cached;
+    }
+
+    // Translated content only ever comes from on-demand translation; we
+    // cannot rebuild it from raw.githubusercontent.com. Return whatever
+    // (possibly stale) we have in cache; otherwise empty.
+    if ($isTranslated) {
+        return $cached !== null ? $cached : '';
+    }
+
+    // Fetch from raw.githubusercontent.com using the stored readme_path.
+    $fullName = (string) ($project['full_name'] ?? '');
+    $readmePath = (string) ($row['readme_path'] ?? '');
+    if ($fullName === '' || $readmePath === '') {
+        return $cached !== null ? $cached : '';
+    }
+    $fresh = readme_fetch_from_github($fullName, $readmePath);
+    if ($fresh !== null && $fresh !== '') {
+        readme_cache_write($projectId, $languageCode, false, $fresh);
+        readme_cache_maybe_evict();
+        // Update fetched_at + md5 in DB so future stats reflect the refresh.
+        $md5 = md5($fresh);
+        $now = date('Y-m-d H:i:s');
+        db_exec(
+            'UPDATE project_readmes SET content_md5 = ?, fetched_at = ?, updated_at = ? WHERE id = ?',
+            [$md5, $now, $now, (int) ($row['id'] ?? 0)]
+        );
+        return $fresh;
+    }
+    return $cached !== null ? $cached : '';
+}
+
+function readme_fetch_from_github(string $fullName, string $readmePath): ?string
+{
+    if ($fullName === '' || $readmePath === '') return null;
+    $url = 'https://raw.githubusercontent.com/' . $fullName . '/HEAD/' . str_replace(' ', '%20', $readmePath);
+    $ch = curl_init($url);
+    curl_setopt_array($ch, array_replace([
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 12,
+        CURLOPT_CONNECTTIMEOUT => 6,
+        CURLOPT_USERAGENT => 'GIR README Fetcher',
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_MAXREDIRS => 3,
+    ], http_ssl_options()));
+    $body = curl_exec($ch);
+    $http = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $errno = curl_errno($ch);
+    curl_close($ch);
+    if ($errno || $http < 200 || $http >= 300 || !is_string($body)) {
+        return null;
+    }
+    return $body;
 }

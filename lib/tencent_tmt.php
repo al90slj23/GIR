@@ -141,14 +141,13 @@ function tmt_translate(string $text, string $sourceLang = 'en', string $targetLa
 }
 
 /**
- * Translate a long Markdown text by chunking on blank-line boundaries.
- * Tencent single call cap is 6000 bytes; we chunk well under that.
+ * Translate a long Markdown text by chunking on blank-line boundaries
+ * and dispatching chunks in parallel via curl_multi for low latency.
  *
- * Markdown protection: code blocks, inline code, URLs, image refs and
- * link refs are extracted into placeholders before translation and
- * restored after, so the API does not mangle Markdown syntax.
+ * Tencent TMT free tier defaults to 5 QPS, so concurrency stays at 4
+ * with a 200ms gap between batches.
  */
-function tmt_translate_long(string $text, string $sourceLang = 'en', string $targetLang = 'zh', int $maxChunkBytes = 4500): array
+function tmt_translate_long(string $text, string $sourceLang = 'en', string $targetLang = 'zh', int $maxChunkBytes = 4500, int $concurrency = 4): array
 {
     $text = (string) $text;
     if (trim($text) === '') {
@@ -165,7 +164,6 @@ function tmt_translate_long(string $text, string $sourceLang = 'en', string $tar
         return ['ok' => true, 'text' => tmt_unmask_markdown($result['text'], $tokens), 'error' => ''];
     }
 
-    // Split on double newlines (paragraph boundaries) to keep markdown structure.
     $paragraphs = preg_split('/(\n\s*\n)/', $masked, -1, PREG_SPLIT_DELIM_CAPTURE);
     if ($paragraphs === false) {
         $clipped = substr($masked, 0, $maxChunkBytes);
@@ -190,22 +188,168 @@ function tmt_translate_long(string $text, string $sourceLang = 'en', string $tar
         $chunks[] = $current;
     }
 
-    $out = '';
-    foreach ($chunks as $chunk) {
-        if (trim($chunk) === '') {
-            $out .= $chunk;
+    $results = array_fill(0, count($chunks), '');
+    $offset = 0;
+    while ($offset < count($chunks)) {
+        $batchIndexes = [];
+        for ($i = 0; $i < $concurrency && $offset + $i < count($chunks); $i++) {
+            $batchIndexes[] = $offset + $i;
+        }
+        $batchTexts = [];
+        foreach ($batchIndexes as $idx) {
+            $chunk = $chunks[$idx];
+            if (strlen($chunk) > 6000) {
+                $chunk = substr($chunk, 0, 6000);
+            }
+            $batchTexts[$idx] = $chunk;
+        }
+        $batchResults = tmt_translate_chunks_parallel($batchTexts, $sourceLang, $targetLang);
+        foreach ($batchResults as $idx => $res) {
+            if (!$res['ok']) {
+                return $res;
+            }
+            $results[$idx] = $res['text'];
+        }
+        $offset += count($batchIndexes);
+        if ($offset < count($chunks)) {
+            usleep(200 * 1000); // back off 200ms between batches to stay under QPS
+        }
+    }
+
+    return ['ok' => true, 'text' => tmt_unmask_markdown(implode('', $results), $tokens), 'error' => ''];
+}
+
+/**
+ * Translate a small set of chunks in parallel using curl_multi.
+ * Each chunk is independently signed (TC3-HMAC-SHA256 includes a per-request
+ * timestamp).
+ *
+ * @param array<int,string> $chunks  Map of original index => text. Empty
+ *                                   strings are skipped.
+ * @return array<int,array{ok:bool,text:string,error:string}>
+ */
+function tmt_translate_chunks_parallel(array $chunks, string $sourceLang, string $targetLang): array
+{
+    $creds = tmt_credentials();
+    if ($creds['secret_id'] === '' || $creds['secret_key'] === '') {
+        $err = ['ok' => false, 'text' => '', 'error' => 'tencent_tmt_not_configured'];
+        $out = [];
+        foreach ($chunks as $idx => $_) {
+            $out[$idx] = $err;
+        }
+        return $out;
+    }
+
+    $service = 'tmt';
+    $host = 'tmt.tencentcloudapi.com';
+    $action = 'TextTranslate';
+    $version = '2018-03-21';
+    $algorithm = 'TC3-HMAC-SHA256';
+
+    $multi = curl_multi_init();
+    $handles = [];
+    $output = [];
+
+    foreach ($chunks as $idx => $text) {
+        if (trim($text) === '') {
+            $output[$idx] = ['ok' => true, 'text' => '', 'error' => ''];
             continue;
         }
-        if (strlen($chunk) > 6000) {
-            $chunk = substr($chunk, 0, 6000);
-        }
-        $result = tmt_translate($chunk, $sourceLang, $targetLang);
-        if (!$result['ok']) {
-            return $result;
-        }
-        $out .= $result['text'];
+        $payload = json_encode([
+            'SourceText' => $text,
+            'Source' => $sourceLang,
+            'Target' => $targetLang,
+            'ProjectId' => 0,
+        ], JSON_UNESCAPED_UNICODE);
+
+        $timestamp = time();
+        $date = gmdate('Y-m-d', $timestamp);
+        $canonicalHeaders = "content-type:application/json; charset=utf-8\nhost:{$host}\nx-tc-action:" . strtolower($action) . "\n";
+        $signedHeaders = 'content-type;host;x-tc-action';
+        $hashedRequestPayload = hash('SHA256', $payload);
+        $canonicalRequest = "POST\n/\n\n" . $canonicalHeaders . "\n" . $signedHeaders . "\n" . $hashedRequestPayload;
+        $credentialScope = $date . '/' . $service . '/tc3_request';
+        $stringToSign = $algorithm . "\n" . $timestamp . "\n" . $credentialScope . "\n" . hash('SHA256', $canonicalRequest);
+        $secretDate = hash_hmac('SHA256', $date, 'TC3' . $creds['secret_key'], true);
+        $secretService = hash_hmac('SHA256', $service, $secretDate, true);
+        $secretSigning = hash_hmac('SHA256', 'tc3_request', $secretService, true);
+        $signature = hash_hmac('SHA256', $stringToSign, $secretSigning);
+        $authorization = $algorithm
+            . ' Credential=' . $creds['secret_id'] . '/' . $credentialScope
+            . ', SignedHeaders=' . $signedHeaders
+            . ', Signature=' . $signature;
+
+        $ch = curl_init('https://' . $host . '/');
+        curl_setopt_array($ch, array_replace([
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $payload,
+            CURLOPT_HTTPHEADER => [
+                'Authorization: ' . $authorization,
+                'Content-Type: application/json; charset=utf-8',
+                'Host: ' . $host,
+                'X-TC-Action: ' . $action,
+                'X-TC-Timestamp: ' . $timestamp,
+                'X-TC-Version: ' . $version,
+                'X-TC-Region: ' . $creds['region'],
+            ],
+            CURLOPT_TIMEOUT => 15,
+            CURLOPT_CONNECTTIMEOUT => 8,
+            CURLOPT_USERAGENT => 'GIR Tencent TMT Client',
+        ], http_ssl_options()));
+        curl_multi_add_handle($multi, $ch);
+        $handles[$idx] = $ch;
     }
-    return ['ok' => true, 'text' => tmt_unmask_markdown($out, $tokens), 'error' => ''];
+
+    if ($handles) {
+        do {
+            $status = curl_multi_exec($multi, $running);
+            if ($running) {
+                curl_multi_select($multi, 1.0);
+            }
+        } while ($running > 0 && $status === CURLM_OK);
+
+        foreach ($handles as $idx => $ch) {
+            $response = curl_multi_getcontent($ch);
+            $errno = curl_errno($ch);
+            $error = curl_error($ch);
+            $http = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_multi_remove_handle($multi, $ch);
+            curl_close($ch);
+
+            if ($errno) {
+                $output[$idx] = ['ok' => false, 'text' => '', 'error' => 'curl_error: ' . $error];
+                continue;
+            }
+            if ($http < 200 || $http >= 300) {
+                $output[$idx] = ['ok' => false, 'text' => '', 'error' => 'http_' . $http . ': ' . substr((string) $response, 0, 200)];
+                continue;
+            }
+            $data = json_decode((string) $response, true);
+            if (!is_array($data) || !isset($data['Response'])) {
+                $output[$idx] = ['ok' => false, 'text' => '', 'error' => 'bad_response'];
+                continue;
+            }
+            if (isset($data['Response']['Error'])) {
+                $output[$idx] = [
+                    'ok' => false,
+                    'text' => '',
+                    'error' => 'tencent_error: ' . ($data['Response']['Error']['Code'] ?? '') . ' ' . ($data['Response']['Error']['Message'] ?? ''),
+                ];
+                continue;
+            }
+            $output[$idx] = ['ok' => true, 'text' => (string) ($data['Response']['TargetText'] ?? ''), 'error' => ''];
+        }
+    }
+
+    curl_multi_close($multi);
+
+    // Preserve original index ordering.
+    $sorted = [];
+    foreach (array_keys($chunks) as $idx) {
+        $sorted[$idx] = $output[$idx] ?? ['ok' => false, 'text' => '', 'error' => 'no_response'];
+    }
+    return $sorted;
 }
 
 /**

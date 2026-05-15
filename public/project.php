@@ -107,7 +107,8 @@ render_header($project['full_name']);
         }
         $sourceUrl = (string) ($currentReadme['source_url'] ?? '');
         $fetchedAt = (string) ($currentReadme['fetched_at'] ?? '');
-        $html = render_markdown_html((string) $currentReadme['content_md'], (string) $project['full_name']);
+        $contentForRender = readme_resolve_content($project, $currentReadme, $readmeView);
+        $html = render_markdown_html($contentForRender, (string) $project['full_name']);
         ?>
         <section class="panel readme-panel">
             <div class="readme-meta muted">

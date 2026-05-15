@@ -251,3 +251,9 @@ VALUES ('readme_fetch_enabled', '1', '是否自动抓取项目 README', NOW());
 
 INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
 VALUES ('readme_per_run', '20', '每轮 backlog 每批抓取多少个项目的 README（会持续抓到清空或时间预算到）', NOW());
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
+VALUES ('readme_cache_ttl_days', '7', 'README 文件缓存保鲜期（天）；超期的访问会重新拉取并刷新', NOW());
+
+INSERT IGNORE INTO app_settings (setting_key, setting_value, description, updated_at)
+VALUES ('readme_cache_max_mb', '200', 'README 文件缓存空间上限（MB），超出按 LRU 淘汰', NOW());

@@ -9,5 +9,6 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/log.php';
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/markdown.php';
+require_once __DIR__ . '/readme_cache.php';
 require_once __DIR__ . '/tencent_tmt.php';
 require_once __DIR__ . '/repositories.php';

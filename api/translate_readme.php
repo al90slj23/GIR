@@ -19,19 +19,34 @@ if (!tmt_configured()) {
 
 // Find an English README we can translate.
 $row = db_one(
-    "SELECT id, project_id, readme_path, content_md, content_md5
+    "SELECT id, project_id, readme_path, content_md5, language_code
      FROM project_readmes
      WHERE project_id = ? AND is_translated = 0 AND language_code = 'en'
      ORDER BY id ASC LIMIT 1",
     [$projectId]
 );
-if (!$row || trim((string) $row['content_md']) === '') {
+if (!$row) {
     json_response(['ok' => false, 'error' => 'no_source_readme'], 404);
 }
 
-$projectRow = db_one('SELECT full_name FROM projects WHERE id = ?', [$projectId]);
+$projectRow = db_one('SELECT id, full_name FROM projects WHERE id = ?', [$projectId]);
 if (!$projectRow) {
     json_response(['ok' => false, 'error' => 'project_not_found'], 404);
+}
+
+// Resolve source markdown from cache, falling back to a live fetch.
+$source = readme_resolve_content(
+    ['id' => $projectId, 'full_name' => (string) $projectRow['full_name']],
+    [
+        'project_id' => $projectId,
+        'id' => (int) $row['id'],
+        'language_code' => (string) $row['language_code'],
+        'is_translated' => 0,
+        'readme_path' => (string) $row['readme_path'],
+    ]
+);
+if (trim($source) === '') {
+    json_response(['ok' => false, 'error' => 'source_unavailable'], 404);
 }
 
 // Rate-limit by IP: max 30 requests / 5 minutes.
@@ -61,7 +76,6 @@ $rate[] = $now;
 @file_put_contents($rateFile, json_encode($rate));
 
 // Run translation.
-$source = (string) $row['content_md'];
 $result = tmt_translate_long($source, 'en', 'zh');
 if (!$result['ok']) {
     app_log('tmt', 'translate_failed', ['project_id' => $projectId, 'error' => $result['error']]);
