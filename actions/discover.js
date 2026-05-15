@@ -2,12 +2,9 @@ const backfillMode = ["1", "true", "yes", "on"].includes(String(process.env.BACK
 const backlogPendingOnly = ["1", "true", "yes", "on"].includes(String(process.env.BACKLOG_PENDING_ONLY || "").toLowerCase());
 const resetAnalyses = ["1", "true", "yes", "on"].includes(String(process.env.RESET_ANALYSES || "").toLowerCase());
 const readmeFetchLimit = Math.max(0, Number(process.env.README_FETCH_LIMIT || "10"));
-const readmeTranslateLimit = Math.max(0, Number(process.env.README_TRANSLATE_LIMIT || "5"));
 const readmeMaxBytes = Math.max(2000, Number(process.env.README_MAX_BYTES || "40000"));
 let readmeFetchEnabled = true;
-let readmeTranslateEnabled = true;
 let readmeFetchBudget = readmeFetchLimit;
-let readmeTranslateBudget = readmeTranslateLimit;
 const runType = process.env.RUN_TYPE || process.argv[2] || "daily";
 const periodType = backfillMode
   ? (backlogPendingOnly ? "manual" : "daily")
@@ -279,9 +276,7 @@ async function loadDiscoverConfig() {
       deepseek_system_prompt: String(config.deepseek_system_prompt || defaultConfig.deepseek_system_prompt).trim() || defaultConfig.deepseek_system_prompt,
       deepseek_task_prompt: String(config.deepseek_task_prompt || defaultConfig.deepseek_task_prompt).trim() || defaultConfig.deepseek_task_prompt,
       readme_fetch_enabled: config.readme_fetch_enabled !== false,
-      readme_translate_enabled: config.readme_translate_enabled !== false,
       readme_per_run: clampNumber(config.readme_per_run, 10, 0, 200),
-      readme_translate_per_run: clampNumber(config.readme_translate_per_run, 5, 0, 50),
     };
   } catch (error) {
     console.warn(`Config error: ${error.message}; using defaults`);
@@ -1253,37 +1248,6 @@ async function collectProjectReadmes(fullName) {
   return readmes;
 }
 
-async function translateReadmeToChinese(markdown) {
-  if (!markdown || !markdown.trim()) return "";
-  const system = [
-    "你是一名资深的开源项目文档翻译，你的任务是把英文 README.md 一比一翻译成中文。",
-    "严格保留原始 Markdown 结构（标题层级、列表、代码块、表格、链接、图片、行内格式）。",
-    "代码块内容不翻译。已有中文的段落原样保留。专有名词、项目名、命令、包名保持原文。",
-    "不要添加任何前言、总结或附注。不要输出 Markdown 以外的说明。",
-  ].join("\n");
-  const res = await fetchWithTimeout(`${env.deepseekBaseUrl.replace(/\/$/, "")}/v1/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${env.deepseekKey}`,
-    },
-    body: JSON.stringify({
-      model: env.deepseekModel,
-      temperature: 0.2,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: markdown },
-      ],
-    }),
-  }, 120000);
-  if (!res.ok) {
-    throw new Error(`DeepSeek translate ${res.status}: ${await res.text()}`);
-  }
-  const data = await res.json();
-  const content = data?.choices?.[0]?.message?.content;
-  return typeof content === "string" ? truncateReadme(content) : "";
-}
-
 async function fetchReadmeQueue(mode, limit) {
   const base = deriveReadmeQueueUrl();
   if (!base) return [];
@@ -1389,75 +1353,6 @@ async function runReadmeFetchPass() {
   }
 }
 
-async function runReadmeTranslatePass() {
-  const pageSize = readmeTranslateBudget > 0 ? readmeTranslateBudget : (readmeTranslateLimit || 5);
-  if (pageSize <= 0) return;
-  const maxSeconds = Math.max(60, Number(process.env.README_TRANSLATE_MAX_SECONDS || "360"));
-  const startedAt = Date.now();
-  let totalProcessed = 0;
-  let consecutiveFailures = 0;
-
-  while (true) {
-    const elapsed = (Date.now() - startedAt) / 1000;
-    if (elapsed >= maxSeconds) {
-      console.log(`Readme translate: hit time budget ${maxSeconds}s, total_processed=${totalProcessed}`);
-      break;
-    }
-
-    const queue = await fetchReadmeQueue("translate", pageSize);
-    if (!queue.length) {
-      console.log(`Readme translate: queue drained, total_processed=${totalProcessed}`);
-      break;
-    }
-
-    console.log(`Readme translate: batch of ${queue.length} (elapsed=${Math.round(elapsed)}s, total_processed=${totalProcessed})`);
-    const batch = [];
-    for (const project of queue) {
-      if ((Date.now() - startedAt) / 1000 >= maxSeconds) break;
-      const source = project.source_readme;
-      if (!source || !source.content_md) continue;
-      try {
-        const translated = await translateReadmeToChinese(source.content_md);
-        if (!translated) continue;
-        batch.push({
-          full_name: project.full_name,
-          readmes: [
-            {
-              readme_path: source.readme_path,
-              language_code: "zh",
-              is_translated: true,
-              source_language_code: source.language_code || "en",
-              source_url: `https://github.com/${project.full_name}/blob/HEAD/${source.readme_path}`,
-              content_md: translated,
-            },
-          ],
-        });
-        if (requestDelayMs > 0) await sleep(requestDelayMs);
-      } catch (error) {
-        console.warn(`Readme translate failed ${project.full_name}: ${error.message}`);
-      }
-    }
-
-    if (!batch.length) {
-      consecutiveFailures++;
-      if (consecutiveFailures >= 3) {
-        console.warn("Readme translate: 3 empty batches in a row, bailing out");
-        break;
-      }
-      continue;
-    }
-    consecutiveFailures = 0;
-
-    try {
-      await postReadmes(batch);
-      totalProcessed += batch.length;
-    } catch (error) {
-      console.warn(`Readme translate post failed: ${error.message}`);
-      break;
-    }
-  }
-}
-
 async function collectChineseReadmeOnly(fullName) {
   // Probe the repo root for a Chinese README variant only; do not re-fetch the default README.
   const results = [];
@@ -1523,24 +1418,6 @@ async function runReadmeRecheckZhPass() {
       console.warn(`Readme recheck_zh post failed: ${error.message}`);
       break;
     }
-  }
-}
-
-async function fetchReadmeMd5ForProject(fullName) {
-  const url = deriveReadmeQueueUrl();
-  if (!url) return {};
-  try {
-    const res = await fetchWithTimeout(`${url}?mode=translate&limit=1&full_name=${encodeURIComponent(fullName)}`, {
-      headers: {
-        "Accept": "application/json",
-        "Authorization": `Bearer ${env.ingestToken}`,
-        "User-Agent": "GIR-Discover",
-      },
-    }, 15000);
-    if (!res.ok) return {};
-    return res.json();
-  } catch {
-    return {};
   }
 }
 
@@ -1700,10 +1577,6 @@ async function main() {
       await runReadmeRecheckZhPass();
     }
     await runBackfill(config);
-    if (config.readme_translate_enabled !== false) {
-      readmeTranslateBudget = Math.max(0, Math.min(readmeTranslateLimit, Number(config.readme_translate_per_run ?? readmeTranslateLimit)));
-      await runReadmeTranslatePass();
-    }
     await runRefreshDuePass(config);
     return;
   }

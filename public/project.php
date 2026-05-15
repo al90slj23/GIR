@@ -30,7 +30,7 @@ if ($readmeBuckets['native_en']) {
     $availableReadmeViews['native_en'] = '原版英文 README';
 }
 if ($readmeBuckets['machine_zh']) {
-    $availableReadmeViews['machine_zh'] = '强翻中文 README';
+    $availableReadmeViews['machine_zh'] = '机器翻译中文 README';
 }
 
 $readmeView = $readmeViewRequested;
@@ -90,7 +90,7 @@ render_header($project['full_name']);
     <?php endif; ?>
 
     <?php if (!$currentReadme): ?>
-        <div class="empty">这个项目的 README 还没被抓取到。后台 backlog 正在持续抓取未入库 README（通常几分钟内入库）；如果是英文 README，还会自动生成「强翻中文」版本。</div>
+        <div class="empty">这个项目的 README 还没被抓取到。后台 backlog 正在持续抓取未入库 README（通常几分钟内入库）；如果是英文 README，可在 README tab 内点击「立即翻译为中文」用腾讯机器翻译实时生成中文版本。</div>
     <?php else: ?>
         <?php
         $languageLabel = '';
@@ -102,7 +102,7 @@ render_header($project['full_name']);
                 $languageLabel = '项目提供的原版 README';
                 break;
             case 'machine_zh':
-                $languageLabel = 'DeepSeek 一比一翻译的中文 README';
+                $languageLabel = '腾讯机器翻译的中文 README';
                 break;
         }
         $sourceUrl = (string) ($currentReadme['source_url'] ?? '');
