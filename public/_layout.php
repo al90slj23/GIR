@@ -2,6 +2,8 @@
 function render_header(string $title): void
 {
     global $config;
+    // Ensure CSRF cookie is sent before any HTML output.
+    csrf_token();
     $siteName = app_setting('site_name', $config['app']['name']);
     $siteTagline = app_setting('site_tagline', app_setting('daily_subtitle', '每天发现值得研究和学习的 GitHub 灵感项目。'));
     $assetPath = rtrim((string) ($_SERVER['DOCUMENT_ROOT'] ?? ''), '/\\') . '/assets/app.css';

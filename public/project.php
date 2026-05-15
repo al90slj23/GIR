@@ -118,11 +118,56 @@ render_header($project['full_name']);
                 <?php if ($fetchedAt !== ''): ?>
                     · 抓取于 <?= h($fetchedAt) ?>
                 <?php endif; ?>
+                <?php if ($readmeView === 'native_en' && empty($readmeBuckets['machine_zh']) && empty($readmeBuckets['native_zh'])): ?>
+                    <button class="button secondary tmt-translate-btn" type="button"
+                            data-project-id="<?= (int) $project['id'] ?>"
+                            data-csrf-token="<?= h(csrf_token()) ?>">
+                        立即翻译为中文
+                    </button>
+                <?php endif; ?>
             </div>
-            <div class="readme-body markdown-body">
+            <div class="readme-body markdown-body" data-readme-body>
                 <?= $html ?>
             </div>
         </section>
+        <script>
+        (function () {
+            var btn = document.querySelector('.tmt-translate-btn');
+            if (!btn || btn.dataset.bound) return;
+            btn.dataset.bound = '1';
+            btn.addEventListener('click', function () {
+                var projectId = btn.getAttribute('data-project-id');
+                var csrf = btn.getAttribute('data-csrf-token');
+                var body = document.querySelector('[data-readme-body]');
+                var meta = btn.parentElement;
+                var originalText = btn.textContent;
+                btn.disabled = true;
+                btn.textContent = '正在翻译...（约 5-30 秒）';
+                var form = new FormData();
+                form.append('project_id', projectId);
+                form.append('_csrf', csrf);
+                fetch('/api/translate_readme.php', { method: 'POST', body: form, credentials: 'same-origin' })
+                    .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
+                    .then(function (resp) {
+                        if (resp.body && resp.body.ok) {
+                            if (body && resp.body.html) body.innerHTML = resp.body.html;
+                            btn.remove();
+                            var marker = document.createElement('span');
+                            marker.textContent = ' · 已翻译为中文（结果已保存）';
+                            meta.appendChild(marker);
+                        } else {
+                            var msg = (resp.body && resp.body.error) || ('http_' + resp.status);
+                            btn.disabled = false;
+                            btn.textContent = '翻译失败：' + msg + '，点击重试';
+                        }
+                    })
+                    .catch(function (e) {
+                        btn.disabled = false;
+                        btn.textContent = '翻译失败：' + (e && e.message ? e.message : 'network_error') + '，点击重试';
+                    });
+            });
+        })();
+        </script>
     <?php endif; ?>
 <?php else: ?>
     <?php

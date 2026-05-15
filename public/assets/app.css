@@ -1571,3 +1571,7 @@ select {
 .change-metric em { font-style: normal; font-size: 12px; color: var(--muted-color, #94a3b8); margin-top: 2px; }
 .profile-list { padding-left: 22px; margin: 6px 0; }
 .profile-list li { margin: 4px 0; }
+
+
+/* TMT translate button inside README meta */
+.readme-meta .tmt-translate-btn { margin-left: 8px; padding: 4px 10px; font-size: 12px; }

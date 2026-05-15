@@ -61,4 +61,9 @@ return [
         'token' => env_value('GITHUB_TOKEN', ''),
         'workflow' => env_value('GITHUB_WORKFLOW', 'discover.yml'),
     ],
+    'tencent' => [
+        'secret_id' => env_value('TENCENT_SECRET_ID', ''),
+        'secret_key' => env_value('TENCENT_SECRET_KEY', ''),
+        'tmt_region' => env_value('TENCENT_TMT_REGION', 'ap-guangzhou'),
+    ],
 ];
