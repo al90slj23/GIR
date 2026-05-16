@@ -83,11 +83,17 @@ if (!$result['ok']) {
 }
 
 // Persist as a translated readme row so subsequent visits use the cached version.
+// Record the source README's MD5 so we can detect when the translation becomes stale.
+$sourceReadmeMd5 = (string) ($row['content_md5'] ?? '');
+if ($sourceReadmeMd5 === '') {
+    $sourceReadmeMd5 = md5($source);
+}
 upsert_project_readme($projectId, [
     'readme_path' => (string) $row['readme_path'],
     'language_code' => 'zh',
     'is_translated' => 1,
     'source_language_code' => 'en',
+    'source_content_md5' => $sourceReadmeMd5,
     'source_url' => 'https://github.com/' . (string) $projectRow['full_name'] . '/blob/HEAD/' . (string) $row['readme_path'],
     'content_md' => $result['text'],
     'fetched_at' => date('Y-m-d H:i:s'),

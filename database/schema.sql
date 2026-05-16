@@ -100,6 +100,7 @@ CREATE TABLE IF NOT EXISTS project_readmes (
   source_url VARCHAR(500) NOT NULL DEFAULT '',
   is_translated TINYINT UNSIGNED NOT NULL DEFAULT 0,
   source_language_code VARCHAR(32) NOT NULL DEFAULT '',
+  source_content_md5 CHAR(32) NOT NULL DEFAULT '',
   content_md MEDIUMTEXT,
   content_md5 CHAR(32) NOT NULL DEFAULT '',
   fetched_at DATETIME NOT NULL,

@@ -148,6 +148,7 @@ if ($readmeTableExists) {
     }
     $readmeMigrations = [
         'content_md5' => "ALTER TABLE project_readmes ADD COLUMN content_md5 CHAR(32) NOT NULL DEFAULT '' AFTER content_md",
+        'source_content_md5' => "ALTER TABLE project_readmes ADD COLUMN source_content_md5 CHAR(32) NOT NULL DEFAULT '' AFTER source_language_code",
     ];
     foreach ($readmeMigrations as $column => $statement) {
         if (!isset($existingReadmeColumns[$column]) && !db()->query($statement)) {

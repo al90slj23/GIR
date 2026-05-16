@@ -1208,86 +1208,96 @@ function progress_run_history_stats(string $kind): array
 function public_collection_progress_summary(?array $latestRunRow): array
 {
     $completion = collection_completion_stats();
-    $latestDateRow = db_one("SELECT MAX(report_date) AS report_date FROM project_reports WHERE period_type = 'daily' AND raw_rank_only = 1");
-    $reportDate = (string) ($latestDateRow['report_date'] ?? '');
-    $rows = [];
-    $uniqueProjectTotal = 0;
-    if ($reportDate !== '') {
-        $rows = db_all(
-            'SELECT r.source_platform,
-                    COUNT(*) AS raw_rank,
-                    COUNT(DISTINCT r.project_id) AS projects,
-                    MAX(r.created_at) AS latest_at
-             FROM project_reports r
-             INNER JOIN projects p ON p.id = r.project_id
-             WHERE r.period_type = ? AND r.report_date = ? AND r.raw_rank_only = 1 AND p.is_hidden = 0' . ranking_primary_platform_filter_sql('r') . '
-             GROUP BY r.source_platform
-             ORDER BY ' . ranking_platform_order_sql('source_platform') . ' ASC, raw_rank DESC',
-            ['daily', $reportDate]
-        );
-        $uniqueRow = db_one(
-            'SELECT COUNT(DISTINCT r.project_id) AS total
-             FROM project_reports r
-             INNER JOIN projects p ON p.id = r.project_id
-             WHERE r.period_type = ? AND r.report_date = ? AND r.raw_rank_only = 1 AND p.is_hidden = 0',
-            ['daily', $reportDate]
-        );
-        $uniqueProjectTotal = (int) ($uniqueRow['total'] ?? 0);
-    }
+    $total = $completion['total'];
+    $withReadme = $completion['with_readme_raw'];
+    $pendingReadme = $completion['pending_readme'];
+    $withZh = $completion['with_readme_zh'];
+    $pendingZh = max(0, $withReadme - $withZh);
+    $percent = $total > 0 ? round(min(100, ($withReadme / $total) * 100), 1) : 0;
 
-    $platforms = [];
-    $rawRank = 0;
-    $platformProjectTotal = 0;
     $latestAt = '';
-    foreach ($rows as $row) {
-        $platformRaw = (int) ($row['raw_rank'] ?? 0);
-        $platformProjects = (int) ($row['projects'] ?? 0);
-        $platform = (string) ($row['source_platform'] ?? '');
-        $rawRank += $platformRaw;
-        $platformProjectTotal += $platformProjects;
-        $rowLatestAt = (string) ($row['latest_at'] ?? '');
-        if ($rowLatestAt > $latestAt) {
-            $latestAt = $rowLatestAt;
-        }
-        $platforms[] = [
-            'source_platform' => $platform,
-            'label' => ranking_platform_label($platform),
-            'raw_rank' => $platformRaw,
-            'projects' => $platformProjects,
-            'analyzed' => $platformProjects,
-            'percent' => 100,
-            'latest_at' => $rowLatestAt,
-        ];
-    }
+    $reportStats = db_one(
+        "SELECT MIN(created_at) AS first_at, MAX(created_at) AS latest_at
+         FROM project_readmes WHERE is_translated = 0"
+    );
+    $latestAt = (string) ($reportStats['latest_at'] ?? '');
+    $firstAt = (string) ($reportStats['first_at'] ?? '');
 
-    $percent = $completion['total'] > 0
-        ? round(min(100, ($completion['fully_ingested'] / $completion['total']) * 100), 1)
-        : 0;
     $active = ($latestRunRow && (string) ($latestRunRow['status'] ?? '') === 'started')
-        || ($percent < 100 && $latestAt !== '' && time() - (int) strtotime($latestAt) <= 20 * 60);
-    $timingRow = [
-        'started_at' => (string) ($latestRunRow['started_at'] ?? ($latestAt ?: '')),
-        'first_analysis_at' => (string) ($latestRunRow['started_at'] ?? ($latestAt ?: '')),
-        'latest_analysis_at' => $latestAt,
-    ];
+        || ($pendingReadme > 0 && $latestAt !== '' && time() - (int) strtotime($latestAt) <= 20 * 60);
+    $mode = $active ? 'running' : 'idle';
+
+    // Timing: rate based on recent README ingestion speed.
+    $recentRate = 0.0;
+    if ($latestAt !== '' && $firstAt !== '') {
+        $span = max(1, (int) strtotime($latestAt) - (int) strtotime($firstAt));
+        $recentRate = $withReadme > 1 ? ($withReadme / ($span / 3600.0)) : 0;
+    }
+    $etaSeconds = ($recentRate > 0 && $pendingReadme > 0) ? (int) ceil($pendingReadme / ($recentRate / 3600)) : null;
+
+    // History stats (raw_rank collection runs).
+    $runStats = db_one(
+        'SELECT COUNT(*) AS total_runs,
+                SUM(CASE WHEN run_type IN ("daily", "weekly") THEN 1 ELSE 0 END) AS auto_runs,
+                SUM(CASE WHEN run_type = "manual" THEN 1 ELSE 0 END) AS manual_runs,
+                SUM(total_found) AS total_found
+         FROM runs
+         WHERE total_found > 0 AND total_analyzed = 0'
+    );
+    $rawReportStats = db_one(
+        'SELECT COUNT(*) AS raw_reports,
+                COUNT(DISTINCT project_id) AS projects,
+                MIN(created_at) AS first_at,
+                MAX(created_at) AS latest_at
+         FROM project_reports
+         WHERE raw_rank_only = 1'
+    );
 
     return [
         'label' => '平台采集入库',
-        'report_date' => $reportDate,
         'active' => $active,
-        'mode' => $active ? 'running' : 'idle',
-        'status_text' => $active ? '正在采集' : '等待下一轮',
-        'raw_rank' => $rawRank,
-        'projects' => $uniqueProjectTotal,
-        'platform_projects' => $platformProjectTotal,
-        'target' => max((int) ($latestRunRow['total_found'] ?? 0), $rawRank),
+        'mode' => $mode,
+        'status_text' => $active ? '正在采集' : ($pendingReadme > 0 ? '队列待处理' : '已完成'),
         'percent' => $percent,
-        'latest_at' => $latestAt,
-        'completion' => $completion,
-        'timing' => progress_timing($timingRow, $completion['total'], $completion['fully_ingested']),
+
+        'progress' => [
+            'total' => $total,
+            'with_readme' => $withReadme,
+            'pending_readme' => $pendingReadme,
+            'with_zh' => $withZh,
+            'pending_zh' => $pendingZh,
+            'percent' => $percent,
+        ],
+
+        'estimate' => [
+            'rate_per_hour' => round($recentRate, 1),
+            'rate_text' => $recentRate > 0 ? (number_format($recentRate, 0) . ' 条/小时') : '计算中',
+            'eta_seconds' => $etaSeconds,
+            'eta_text' => progress_duration_text($etaSeconds),
+            'estimated_finish_at' => $etaSeconds !== null ? date('Y-m-d H:i:s', time() + $etaSeconds) : '',
+        ],
+
+        'current_run' => [
+            'status' => $mode,
+            'started_at' => (string) ($latestRunRow['started_at'] ?? ''),
+            'latest_at' => $latestAt,
+            'elapsed_text' => $latestRunRow ? progress_duration_text(max(0, time() - (int) strtotime((string) $latestRunRow['started_at']))) : '-',
+        ],
+
+        'history' => [
+            'label' => '历史累计统计',
+            'stats' => [
+                ['label' => '累计候选记录', 'value' => number_format((int) ($rawReportStats['raw_reports'] ?? 0))],
+                ['label' => '去重项目数', 'value' => number_format((int) ($rawReportStats['projects'] ?? 0))],
+                ['label' => '采集批次数', 'value' => number_format((int) ($runStats['total_runs'] ?? 0))],
+                ['label' => '自动周期批次', 'value' => number_format((int) ($runStats['auto_runs'] ?? 0))],
+                ['label' => '手动/搜索批次', 'value' => number_format((int) ($runStats['manual_runs'] ?? 0))],
+                ['label' => '采集时间跨度', 'value' => progress_span_text($rawReportStats['first_at'] ?? null, $rawReportStats['latest_at'] ?? null)],
+                ['label' => '最近入库', 'value' => (string) (($rawReportStats['latest_at'] ?? '') ?: '-'), 'wide' => true],
+            ],
+        ],
+
         'next_schedule' => progress_next_schedule('collection'),
-        'history' => progress_run_history_stats('collection'),
-        'platforms' => $platforms,
     ];
 }
 
@@ -1331,11 +1341,7 @@ function collection_completion_stats(): array
 
 function public_gir_progress_summary(?array $latestRunRow, ?array $activeWorkflowRun = null): array
 {
-    $projectTotals = db_one(
-        'SELECT COUNT(*) AS total
-         FROM projects
-         WHERE is_hidden = 0'
-    );
+    $total = (int) (db_one("SELECT COUNT(*) AS total FROM projects WHERE is_hidden = 0")['total'] ?? 0);
     $analysisTotals = db_one(
         'SELECT COUNT(DISTINCT p.id) AS analyzed,
                 MIN(r.created_at) AS first_analysis_at,
@@ -1344,87 +1350,138 @@ function public_gir_progress_summary(?array $latestRunRow, ?array $activeWorkflo
          INNER JOIN project_reports r ON r.project_id = p.id
          WHERE p.is_hidden = 0 AND r.raw_rank_only = 0 AND r.one_sentence <> ""'
     );
-    $platformRows = db_all(
-        'SELECT rr.source_platform,
-                COUNT(DISTINCT rr.project_id) AS raw_rank,
-                COUNT(DISTINCT ar.project_id) AS analyzed
-         FROM project_reports rr
-         INNER JOIN projects p ON p.id = rr.project_id
-         LEFT JOIN (
-             SELECT DISTINCT project_id
-             FROM project_reports
-             WHERE raw_rank_only = 0 AND one_sentence <> ""
-         ) ar ON ar.project_id = rr.project_id
-         WHERE rr.raw_rank_only = 1 AND p.is_hidden = 0' . ranking_primary_platform_filter_sql('rr') . '
-         GROUP BY rr.source_platform
-         ORDER BY ' . ranking_platform_order_sql('source_platform') . ' ASC, raw_rank DESC
-         LIMIT 8'
-    );
-
-    $total = (int) ($projectTotals['total'] ?? 0);
     $analyzed = (int) ($analysisTotals['analyzed'] ?? 0);
-    $remaining = max(0, $total - $analyzed);
-    $percent = $total > 0 ? round(min(100, ($analyzed / $total) * 100), 1) : 0;
+    $pendingNew = max(0, $total - $analyzed);
     $firstAnalysisAt = (string) ($analysisTotals['first_analysis_at'] ?? '');
     $latestAnalysisAt = (string) ($analysisTotals['latest_analysis_at'] ?? '');
-    $startedAt = (string) ($latestRunRow['status'] ?? '') === 'started'
-        ? (string) ($latestRunRow['started_at'] ?? '')
-        : $firstAnalysisAt;
-    $timingRow = [
-        'started_at' => $startedAt,
-        'first_analysis_at' => $firstAnalysisAt,
-        'latest_analysis_at' => $latestAnalysisAt,
-    ];
+    $percent = $total > 0 ? round(min(100, ($analyzed / $total) * 100), 1) : 0;
+
+    // Today's activity.
+    $todayCount = (int) (db_one(
+        "SELECT COUNT(*) AS n FROM project_reports
+         WHERE raw_rank_only = 0 AND one_sentence <> '' AND created_at >= CURDATE()"
+    )['n'] ?? 0);
+
+    // Pending strong-signal count (cached, expensive query).
+    $pendingSignal = 0;
+    $signalCachePath = rtrim(sys_get_temp_dir(), '/\\') . DIRECTORY_SEPARATOR . 'gir_pending_signal.json';
+    $signalCacheTtl = 120;
+    if (is_file($signalCachePath)) {
+        $raw = @file_get_contents($signalCachePath);
+        $cached = is_string($raw) ? json_decode($raw, true) : null;
+        if (is_array($cached) && (int) ($cached['t'] ?? 0) + $signalCacheTtl >= time()) {
+            $pendingSignal = (int) ($cached['n'] ?? 0);
+        }
+    }
+
     $active = ($latestRunRow && (string) ($latestRunRow['status'] ?? '') === 'started')
         || ($latestAnalysisAt !== '' && time() - (int) strtotime($latestAnalysisAt) <= 20 * 60);
     $pending = null;
-    if (!$active && $remaining > 0 && $activeWorkflowRun) {
+    if (!$active && ($pendingNew > 0 || $pendingSignal > 0) && $activeWorkflowRun) {
         $workflowStartedAt = (string) (($activeWorkflowRun['started_at'] ?? '') ?: ($activeWorkflowRun['created_at'] ?? ''));
         $workflowTs = $workflowStartedAt !== '' ? (int) strtotime($workflowStartedAt) : 0;
-        $latestKnownTs = max(
-            $latestAnalysisAt !== '' ? (int) strtotime($latestAnalysisAt) : 0,
-            !empty($latestRunRow['started_at']) ? (int) strtotime((string) $latestRunRow['started_at']) : 0
-        );
+        $latestKnownTs = $latestAnalysisAt !== '' ? (int) strtotime($latestAnalysisAt) : 0;
         if ($workflowTs > 0 && $workflowTs > $latestKnownTs) {
             $pending = [
                 'label' => 'GitHub 工作流已启动',
-                'summary' => '等待首批 GIR 结果回写',
+                'summary' => '等待首批结果回写',
                 'started_at' => $workflowStartedAt,
             ];
         }
     }
     $mode = $active ? 'running' : ($pending ? 'pending' : 'idle');
 
-    $platforms = [];
-    foreach ($platformRows as $row) {
-        $rawRank = (int) ($row['raw_rank'] ?? 0);
-        $platformAnalyzed = (int) ($row['analyzed'] ?? 0);
-        $platform = (string) ($row['source_platform'] ?? '');
-        $platforms[] = [
-            'source_platform' => $platform,
-            'label' => ranking_platform_label($platform),
-            'raw_rank' => $rawRank,
-            'analyzed' => $platformAnalyzed,
-            'percent' => $rawRank > 0 ? round(min(100, ($platformAnalyzed / $rawRank) * 100), 1) : 0,
-        ];
+    // Rate.
+    $recentRate = 0.0;
+    if ($firstAnalysisAt !== '' && $latestAnalysisAt !== '' && $analyzed > 1) {
+        $span = max(1, (int) strtotime($latestAnalysisAt) - (int) strtotime($firstAnalysisAt));
+        $recentRate = $analyzed / ($span / 3600.0);
     }
+    $totalPending = $pendingNew + $pendingSignal;
+    $etaSeconds = ($recentRate > 0 && $totalPending > 0) ? (int) ceil($totalPending / ($recentRate / 3600)) : null;
+
+    // Recent analyses (last 5).
+    $recentList = db_all(
+        "SELECT r.project_id, p.full_name, r.created_at,
+                SUBSTRING(r.change_observation, 1, 200) AS obs_preview
+         FROM project_reports r
+         INNER JOIN projects p ON p.id = r.project_id
+         WHERE r.raw_rank_only = 0 AND r.one_sentence <> ''
+         ORDER BY r.created_at DESC, r.id DESC
+         LIMIT 5"
+    );
+
+    // History.
+    $runStats = db_one(
+        'SELECT COUNT(*) AS total_runs,
+                SUM(CASE WHEN run_type IN ("daily", "weekly", "backlog") THEN 1 ELSE 0 END) AS auto_runs,
+                SUM(CASE WHEN run_type = "manual" THEN 1 ELSE 0 END) AS manual_runs,
+                SUM(total_analyzed) AS total_analyzed
+         FROM runs
+         WHERE total_analyzed > 0'
+    );
+    $reportStats = db_one(
+        'SELECT COUNT(*) AS total_reports,
+                COUNT(DISTINCT project_id) AS projects,
+                MIN(created_at) AS first_at,
+                MAX(created_at) AS latest_at
+         FROM project_reports
+         WHERE raw_rank_only = 0 AND one_sentence <> ""'
+    );
 
     return [
-        'source_platform' => 'all_projects',
-        'label' => '全局 GIR 解读',
-        'total' => $total,
-        'analyzed' => $analyzed,
-        'raw_rank' => $total,
-        'percent' => $percent,
-        'latest_at' => $latestAnalysisAt,
+        'label' => 'GIR 解读',
         'active' => $active,
         'mode' => $mode,
-        'status_text' => $active ? '正在解读' : ($pending ? '等待首批回写' : ($remaining > 0 ? '剩余待解读' : '等待新增')),
+        'status_text' => $active ? '正在解读' : ($pending ? '等待首批回写' : ($totalPending > 0 ? '队列待处理' : '空闲')),
+        'percent' => $percent,
         'pending' => $pending,
-        'timing' => progress_timing($timingRow, $total, $analyzed),
-        'next_schedule' => progress_next_schedule('gir', $remaining > 0),
-        'history' => progress_run_history_stats('gir'),
-        'platforms' => $platforms,
+
+        'progress' => [
+            'total' => $total,
+            'analyzed' => $analyzed,
+            'pending_new' => $pendingNew,
+            'pending_signal' => $pendingSignal,
+            'today_count' => $todayCount,
+            'percent' => $percent,
+        ],
+
+        'estimate' => [
+            'rate_per_hour' => round($recentRate, 1),
+            'rate_text' => $recentRate > 0 ? (number_format($recentRate, 0) . ' 条/小时') : '计算中',
+            'eta_seconds' => $etaSeconds,
+            'eta_text' => progress_duration_text($etaSeconds),
+            'estimated_finish_at' => $etaSeconds !== null ? date('Y-m-d H:i:s', time() + $etaSeconds) : '',
+        ],
+
+        'current_run' => [
+            'status' => $mode,
+            'started_at' => (string) ($latestRunRow['started_at'] ?? ''),
+            'latest_at' => $latestAnalysisAt,
+            'elapsed_text' => $active && $latestRunRow ? progress_duration_text(max(0, time() - (int) strtotime((string) $latestRunRow['started_at']))) : '-',
+            'today_count' => $todayCount,
+            'recent' => array_map(static function (array $row): array {
+                return [
+                    'full_name' => (string) $row['full_name'],
+                    'created_at' => (string) $row['created_at'],
+                ];
+            }, $recentList),
+        ],
+
+        'history' => [
+            'label' => '历史累计统计',
+            'stats' => [
+                ['label' => '累计解读次数', 'value' => number_format((int) ($reportStats['total_reports'] ?? 0))],
+                ['label' => '已解读项目', 'value' => number_format((int) ($reportStats['projects'] ?? 0))],
+                ['label' => '解读批次数', 'value' => number_format((int) ($runStats['total_runs'] ?? 0))],
+                ['label' => '自动周期批次', 'value' => number_format((int) ($runStats['auto_runs'] ?? 0))],
+                ['label' => '手动/搜索批次', 'value' => number_format((int) ($runStats['manual_runs'] ?? 0))],
+                ['label' => '解读时间跨度', 'value' => progress_span_text($reportStats['first_at'] ?? null, $reportStats['latest_at'] ?? null)],
+                ['label' => '最近解读', 'value' => (string) (($reportStats['latest_at'] ?? '') ?: '-'), 'wide' => true],
+            ],
+        ],
+
+        'next_schedule' => progress_next_schedule('gir', $totalPending > 0),
     ];
 }
 
@@ -2191,6 +2248,7 @@ function upsert_project_readme(int $projectId, array $row): int
     $languageCode = truncate_text($row['language_code'] ?? 'en', 32);
     $isTranslated = !empty($row['is_translated']) ? 1 : 0;
     $sourceLanguageCode = truncate_text($row['source_language_code'] ?? '', 32);
+    $sourceContentMd5 = truncate_text($row['source_content_md5'] ?? '', 32);
     $sourceUrl = truncate_text($row['source_url'] ?? '', 500);
     $content = (string) ($row['content_md'] ?? '');
     if (function_exists('mb_strlen') && mb_strlen($content, 'UTF-8') > 200000) {
@@ -2214,15 +2272,15 @@ function upsert_project_readme(int $projectId, array $row): int
         [$projectId, $readmePath, $languageCode, $isTranslated]
     );
 
-    // DB stores only metadata; content lives in the file cache.
     $emptyContentForDb = '';
 
     if ($existing) {
         db_exec(
             'UPDATE project_readmes
-             SET source_url = ?, source_language_code = ?, content_md = ?, content_md5 = ?, fetched_at = ?, updated_at = ?
+             SET source_url = ?, source_language_code = ?, source_content_md5 = ?,
+                 content_md = ?, content_md5 = ?, fetched_at = ?, updated_at = ?
              WHERE id = ?',
-            [$sourceUrl, $sourceLanguageCode, $emptyContentForDb, $contentMd5, $fetchedAt, $now, (int) $existing['id']]
+            [$sourceUrl, $sourceLanguageCode, $sourceContentMd5, $emptyContentForDb, $contentMd5, $fetchedAt, $now, (int) $existing['id']]
         );
         return (int) $existing['id'];
     }
@@ -2230,8 +2288,8 @@ function upsert_project_readme(int $projectId, array $row): int
     db_exec(
         'INSERT INTO project_readmes
          (project_id, readme_path, language_code, source_url, is_translated, source_language_code,
-          content_md, content_md5, fetched_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          source_content_md5, content_md, content_md5, fetched_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [
             $projectId,
             $readmePath,
@@ -2239,6 +2297,7 @@ function upsert_project_readme(int $projectId, array $row): int
             $sourceUrl,
             $isTranslated,
             $sourceLanguageCode,
+            $sourceContentMd5,
             $emptyContentForDb,
             $contentMd5,
             $fetchedAt,
@@ -2253,7 +2312,7 @@ function list_project_readmes(int $projectId): array
 {
     return db_all(
         "SELECT id, project_id, readme_path, language_code, is_translated, source_language_code,
-                source_url, content_md, fetched_at, created_at, updated_at
+                source_content_md5, source_url, content_md5, fetched_at, created_at, updated_at
          FROM project_readmes
          WHERE project_id = ?
          ORDER BY is_translated ASC,
@@ -2268,6 +2327,7 @@ function classify_project_readmes(array $readmes): array
     $native_zh = null;
     $native_en = null;
     $machine_zh = null;
+    $machine_zh_valid = false;
     foreach ($readmes as $row) {
         $isTranslated = (int) ($row['is_translated'] ?? 0) === 1;
         $lang = strtolower((string) ($row['language_code'] ?? ''));
@@ -2280,10 +2340,20 @@ function classify_project_readmes(array $readmes): array
             $native_en = $row;
         }
     }
+    // Check if machine translation is still valid (source MD5 matches current English README MD5).
+    if ($machine_zh && $native_en) {
+        $sourceMd5 = (string) ($machine_zh['source_content_md5'] ?? '');
+        $currentMd5 = (string) ($native_en['content_md5'] ?? '');
+        $machine_zh_valid = ($sourceMd5 !== '' && $currentMd5 !== '' && $sourceMd5 === $currentMd5);
+    } elseif ($machine_zh && !$native_en) {
+        // No English README to compare against; treat translation as valid.
+        $machine_zh_valid = true;
+    }
     return [
         'native_zh' => $native_zh,
         'native_en' => $native_en,
         'machine_zh' => $machine_zh,
+        'machine_zh_valid' => $machine_zh_valid,
     ];
 }
 

@@ -29,7 +29,7 @@ if ($readmeBuckets['native_zh']) {
 if ($readmeBuckets['native_en']) {
     $availableReadmeViews['native_en'] = '原版英文 README';
 }
-if ($readmeBuckets['machine_zh']) {
+if ($readmeBuckets['machine_zh'] && !empty($readmeBuckets['machine_zh_valid'])) {
     $availableReadmeViews['machine_zh'] = '机器翻译中文 README';
 }
 
@@ -119,7 +119,7 @@ render_header($project['full_name']);
                 <?php if ($fetchedAt !== ''): ?>
                     · 抓取于 <?= h($fetchedAt) ?>
                 <?php endif; ?>
-                <?php if ($readmeView === 'native_en' && empty($readmeBuckets['machine_zh']) && empty($readmeBuckets['native_zh'])): ?>
+                <?php if ($readmeView === 'native_en' && empty($readmeBuckets['machine_zh_valid']) && empty($readmeBuckets['native_zh'])): ?>
                     <button class="button secondary tmt-translate-btn" type="button"
                             data-project-id="<?= (int) $project['id'] ?>"
                             data-csrf-token="<?= h(csrf_token()) ?>">
