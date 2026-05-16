@@ -280,6 +280,7 @@ async function loadDiscoverConfig() {
       deepseek_api_key: String(config.deepseek_api_key || "").trim(),
       deepseek_base_url: String(config.deepseek_base_url || "").trim(),
       deepseek_model: String(config.deepseek_model || "").trim(),
+      analyze_concurrency: clampNumber(config.analyze_concurrency, 10, 1, 200),
       readme_fetch_enabled: config.readme_fetch_enabled !== false,
       readme_per_run: clampNumber(config.readme_per_run, 10, 0, 200),
     };
@@ -1693,7 +1694,12 @@ async function main() {
   if (config.deepseek_api_key) env.deepseekKey = config.deepseek_api_key;
   if (config.deepseek_base_url) env.deepseekBaseUrl = config.deepseek_base_url;
   if (config.deepseek_model) env.deepseekModel = config.deepseek_model;
-  console.log(`Discover config: mode=${backfillMode ? (backlogPendingOnly ? "backlog" : "backfill") : (seedMode ? "seed" : "normal")}, max=${config.max_projects}, per_page=${config.per_page}, platforms=${config.platforms.join(",")}, topics=${config.topics.join(",")}, extra_queries=${config.extra_queries.length}, report_date=${today}, deepseek_base=${env.deepseekBaseUrl}`);
+  // Override concurrency from DB config.
+  if (config.analyze_concurrency) {
+    process.env.ANALYZE_CONCURRENCY = String(config.analyze_concurrency);
+    process.env.REFRESH_CONCURRENCY = String(config.analyze_concurrency);
+  }
+  console.log(`Discover config: mode=${backfillMode ? (backlogPendingOnly ? "backlog" : "backfill") : (seedMode ? "seed" : "normal")}, max=${config.max_projects}, per_page=${config.per_page}, platforms=${config.platforms.join(",")}, topics=${config.topics.join(",")}, extra_queries=${config.extra_queries.length}, report_date=${today}, deepseek_base=${env.deepseekBaseUrl}, concurrency=${process.env.ANALYZE_CONCURRENCY || "10"}`);
   if (runType === "refresh_all") {
     console.log("RUN_TYPE=refresh_all: re-analyzing every project once with the new repo_snapshot schema");
     await runRefreshAllPass(config);

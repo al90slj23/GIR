@@ -1756,6 +1756,7 @@ function discover_setting_definitions(): array
         'discover_extra_queries' => ['label' => '额外搜索语句', 'type' => 'textarea', 'default' => '', 'description' => '每行一条 GitHub Search 查询，可使用 {since}。'],
         'readme_fetch_enabled' => ['label' => '启用 README 抓取', 'type' => 'checkbox', 'default' => '1', 'description' => '每轮 backlog 会持续抓取，直到队列清空或达到时间预算。'],
         'readme_per_run' => ['label' => 'README 抓取单批大小', 'type' => 'number', 'default' => '20', 'description' => '每个 fetch 批次抓多少个项目；抓完继续下一批，直到队列清空。'],
+        'analyze_concurrency' => ['label' => 'DeepSeek 解读并发数', 'type' => 'number', 'default' => '10', 'description' => '同时并行调用 DeepSeek 的线程数。根据 API 渠道限制设置。'],
         'deepseek_system_prompt' => ['label' => 'GIR 解读系统提示词', 'type' => 'textarea', 'default' => default_deepseek_system_prompt(), 'description' => '控制 GIR 解读的角色、边界和评分标准。'],
         'deepseek_task_prompt' => ['label' => 'GIR 解读任务提示词', 'type' => 'textarea', 'default' => default_deepseek_task_prompt(), 'description' => '控制每个项目解读的口吻、重点和判断方式；输出 JSON 字段结构由代码固定。'],
         'deepseek_api_key' => ['label' => 'DeepSeek API Key', 'type' => 'textarea', 'default' => '', 'description' => '填写后优先使用此 Key（覆盖 GitHub Secrets）。留空则使用 Secrets 里的值。'],
@@ -1914,6 +1915,7 @@ function discover_public_config(): array
         'deepseek_model' => app_setting('deepseek_model', ''),
         'readme_fetch_enabled' => discover_bool_setting('readme_fetch_enabled', true),
         'readme_per_run' => discover_int_setting('readme_per_run', 10, 0, 200),
+        'analyze_concurrency' => discover_int_setting('analyze_concurrency', 10, 1, 200),
     ];
 }
 
