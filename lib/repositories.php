@@ -1756,8 +1756,11 @@ function discover_setting_definitions(): array
         'discover_extra_queries' => ['label' => '额外搜索语句', 'type' => 'textarea', 'default' => '', 'description' => '每行一条 GitHub Search 查询，可使用 {since}。'],
         'readme_fetch_enabled' => ['label' => '启用 README 抓取', 'type' => 'checkbox', 'default' => '1', 'description' => '每轮 backlog 会持续抓取，直到队列清空或达到时间预算。'],
         'readme_per_run' => ['label' => 'README 抓取单批大小', 'type' => 'number', 'default' => '20', 'description' => '每个 fetch 批次抓多少个项目；抓完继续下一批，直到队列清空。'],
-        'deepseek_system_prompt' => ['label' => 'GIR 解读系统提示词', 'type' => 'textarea', 'default' => default_deepseek_system_prompt(), 'description' => '控制 GIR 解读的角色、边界和评分标准；当前模型供应商为 DeepSeek。'],
+        'deepseek_system_prompt' => ['label' => 'GIR 解读系统提示词', 'type' => 'textarea', 'default' => default_deepseek_system_prompt(), 'description' => '控制 GIR 解读的角色、边界和评分标准。'],
         'deepseek_task_prompt' => ['label' => 'GIR 解读任务提示词', 'type' => 'textarea', 'default' => default_deepseek_task_prompt(), 'description' => '控制每个项目解读的口吻、重点和判断方式；输出 JSON 字段结构由代码固定。'],
+        'deepseek_api_key' => ['label' => 'DeepSeek API Key', 'type' => 'textarea', 'default' => '', 'description' => '填写后优先使用此 Key（覆盖 GitHub Secrets）。留空则使用 Secrets 里的值。'],
+        'deepseek_base_url' => ['label' => 'DeepSeek API 地址', 'type' => 'textarea', 'default' => '', 'description' => '例如 https://api.deepseek.com 或第三方兼容地址。留空则使用 Secrets 里的值。'],
+        'deepseek_model' => ['label' => 'DeepSeek 模型名', 'type' => 'textarea', 'default' => '', 'description' => '例如 deepseek-chat。留空则使用 Secrets 里的值。'],
     ];
 }
 
@@ -1906,6 +1909,9 @@ function discover_public_config(): array
         'platforms' => discover_fixed_platforms(),
         'deepseek_system_prompt' => app_setting('deepseek_system_prompt', default_deepseek_system_prompt()),
         'deepseek_task_prompt' => app_setting('deepseek_task_prompt', default_deepseek_task_prompt()),
+        'deepseek_api_key' => app_setting('deepseek_api_key', ''),
+        'deepseek_base_url' => app_setting('deepseek_base_url', ''),
+        'deepseek_model' => app_setting('deepseek_model', ''),
         'readme_fetch_enabled' => discover_bool_setting('readme_fetch_enabled', true),
         'readme_per_run' => discover_int_setting('readme_per_run', 10, 0, 200),
     ];

@@ -277,6 +277,9 @@ async function loadDiscoverConfig() {
       platforms,
       deepseek_system_prompt: String(config.deepseek_system_prompt || defaultConfig.deepseek_system_prompt).trim() || defaultConfig.deepseek_system_prompt,
       deepseek_task_prompt: String(config.deepseek_task_prompt || defaultConfig.deepseek_task_prompt).trim() || defaultConfig.deepseek_task_prompt,
+      deepseek_api_key: String(config.deepseek_api_key || "").trim(),
+      deepseek_base_url: String(config.deepseek_base_url || "").trim(),
+      deepseek_model: String(config.deepseek_model || "").trim(),
       readme_fetch_enabled: config.readme_fetch_enabled !== false,
       readme_per_run: clampNumber(config.readme_per_run, 10, 0, 200),
     };
@@ -1686,7 +1689,11 @@ function projectPayload(repo, analysis, extras = {}) {
 
 async function main() {
   const config = applyDynamicSearchConfig(applySeedConfig(applyRuntimeOverrides(await loadDiscoverConfig())));
-  console.log(`Discover config: mode=${backfillMode ? (backlogPendingOnly ? "backlog" : "backfill") : (seedMode ? "seed" : "normal")}, max=${config.max_projects}, per_page=${config.per_page}, platforms=${config.platforms.join(",")}, topics=${config.topics.join(",")}, extra_queries=${config.extra_queries.length}, report_date=${today}`);
+  // Override DeepSeek credentials from DB config if provided (takes priority over GitHub Secrets).
+  if (config.deepseek_api_key) env.deepseekKey = config.deepseek_api_key;
+  if (config.deepseek_base_url) env.deepseekBaseUrl = config.deepseek_base_url;
+  if (config.deepseek_model) env.deepseekModel = config.deepseek_model;
+  console.log(`Discover config: mode=${backfillMode ? (backlogPendingOnly ? "backlog" : "backfill") : (seedMode ? "seed" : "normal")}, max=${config.max_projects}, per_page=${config.per_page}, platforms=${config.platforms.join(",")}, topics=${config.topics.join(",")}, extra_queries=${config.extra_queries.length}, report_date=${today}, deepseek_base=${env.deepseekBaseUrl}`);
   if (runType === "refresh_all") {
     console.log("RUN_TYPE=refresh_all: re-analyzing every project once with the new repo_snapshot schema");
     await runRefreshAllPass(config);
