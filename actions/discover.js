@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 const backfillMode = ["1", "true", "yes", "on"].includes(String(process.env.BACKFILL_EXISTING || "").toLowerCase());
 const backlogPendingOnly = ["1", "true", "yes", "on"].includes(String(process.env.BACKLOG_PENDING_ONLY || "").toLowerCase());
 const resetAnalyses = ["1", "true", "yes", "on"].includes(String(process.env.RESET_ANALYSES || "").toLowerCase());
@@ -1439,8 +1441,7 @@ async function runReadmeRecheckZhPass() {
 }
 
 function md5Hex(input) {
-  const crypto = require("crypto");
-  return crypto.createHash("md5").update(String(input || ""), "utf8").digest("hex");
+  return createHash("md5").update(String(input || ""), "utf8").digest("hex");
 }
 
 async function processSingleRefresh(project, config, options = {}) {
