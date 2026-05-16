@@ -904,7 +904,7 @@ function computeRepoDeltas(repo, history) {
   };
 }
 
-function userPrompt(repo, readme, history = [], config = defaultConfig) {
+function userPrompt(repo, readme, history = [], config = defaultConfig, extras = {}) {
   return JSON.stringify({
     task: String(config.deepseek_task_prompt || defaultTaskPrompt()).trim() || defaultTaskPrompt(),
     required_schema: {
@@ -922,6 +922,7 @@ function userPrompt(repo, readme, history = [], config = defaultConfig) {
       change_note: "本次解读相对上次的总体变化一句话总结（没变化则说无明显变化）",
       change_observation: {
         has_previous: "true/false",
+        trigger_reasons: ["列出本次重新解读的具体触发原因，参考 input.refresh_reasons；说人话，例如「Stars 增长 1234（从 3000 到 4234）」「README 内容变化」"],
         growth_intensity: "低/中/高（基于 repo_deltas.star_growth 和 span_days）",
         what_changed: "README 新章节 / 新功能板块 / 定位变化等具体描述",
         why_it_matters: "对用户决定是否重新关注的影响",
@@ -952,6 +953,7 @@ function userPrompt(repo, readme, history = [], config = defaultConfig) {
       pushed_at: repo.pushed_at || null,
     },
     repo_deltas: computeRepoDeltas(repo, history),
+    refresh_reasons: Array.isArray(extras?.refresh_reasons) ? extras.refresh_reasons : [],
     previous_analyses: compactHistory(history).slice(0, 5),
     readme,
   });
@@ -1094,29 +1096,44 @@ async function runBackfill(config) {
   }
 
   let analyzedCount = 0;
-  let analyzedBatch = [];
-  for (const repo of repos) {
-    console.log(`Backfill analyzing ${repo.full_name}`);
+  const analyzedBatch = [];
+  const concurrency = Math.max(1, Math.min(20, Number(process.env.ANALYZE_CONCURRENCY || "10")));
+  const flushLock = { running: false };
+  const flushIfFull = async () => {
+    if (flushLock.running) return;
+    if (analyzedBatch.length < analysisIngestBatchSize) return;
+    flushLock.running = true;
     try {
-      const history = await fetchProjectHistory(repo.full_name);
-      const readme = await getReadme(repo);
-      const analysis = await analyze(repo, readme, history, config);
-      analyzedBatch.push(projectPayload(repo, analysis));
-      analyzedCount++;
-      if (analyzedBatch.length >= analysisIngestBatchSize) {
-        await ingest(analyzedBatch, analysisIngestBatchSize);
-        analyzedBatch = [];
-      }
-      if (requestDelayMs > 0) {
-        await sleep(requestDelayMs);
-      }
-    } catch (error) {
-      console.error(`Backfill failed ${repo.full_name}: ${error.message}`);
-      if (requestDelayMs > 0) {
-        await sleep(requestDelayMs);
-      }
+      const slice = analyzedBatch.splice(0, analysisIngestBatchSize);
+      await ingest(slice, analysisIngestBatchSize);
+    } finally {
+      flushLock.running = false;
     }
+  };
+
+  const repoIter = repos[Symbol.iterator]();
+  const workers = [];
+  for (let i = 0; i < Math.min(concurrency, repos.length); i++) {
+    workers.push((async () => {
+      while (true) {
+        const next = repoIter.next();
+        if (next.done) return;
+        const repo = next.value;
+        console.log(`Backfill analyzing ${repo.full_name}`);
+        try {
+          const history = await fetchProjectHistory(repo.full_name);
+          const readme = await getReadme(repo);
+          const analysis = await analyze(repo, readme, history, config);
+          analyzedBatch.push(projectPayload(repo, analysis));
+          analyzedCount++;
+          await flushIfFull();
+        } catch (error) {
+          console.error(`Backfill failed ${repo.full_name}: ${error.message}`);
+        }
+      }
+    })());
   }
+  await Promise.all(workers);
 
   if (analyzedBatch.length) {
     await ingest(analyzedBatch, analysisIngestBatchSize);
@@ -1421,60 +1438,161 @@ async function runReadmeRecheckZhPass() {
   }
 }
 
-async function runRefreshDuePass(config) {
-  const pageSize = Math.max(1, Math.min(20, Number(process.env.REFRESH_DUE_PAGE_SIZE || "3")));
-  const maxSeconds = Math.max(60, Number(process.env.REFRESH_DUE_MAX_SECONDS || "420"));
+function md5Hex(input) {
+  const crypto = require("crypto");
+  return crypto.createHash("md5").update(String(input || ""), "utf8").digest("hex");
+}
+
+async function processSingleRefresh(project, config, options = {}) {
+  const fullName = project.full_name;
+  const repo = await repoDetails(fullName);
+  if (!repo) {
+    return { ok: false, error: "repo_unavailable" };
+  }
+  repo.source_platform = "backfill";
+  repo.source_tag = "all_projects";
+  repo.source_rank = 0;
+  repo.source_score = scoreRepo(repo);
+
+  const readmes = await collectProjectReadmes(fullName);
+  let readmeMd5 = null;
+  let englishReadmeMd5 = null;
+  if (readmes.length) {
+    const enReadme = readmes.find((r) => r.language_code === "en" && !r.is_translated);
+    const zhReadme = readmes.find((r) => !r.is_translated && String(r.language_code || "").startsWith("zh"));
+    if (zhReadme) readmeMd5 = md5Hex(zhReadme.content_md);
+    if (enReadme) englishReadmeMd5 = md5Hex(enReadme.content_md);
+    if (!readmeMd5 && englishReadmeMd5) readmeMd5 = englishReadmeMd5;
+    try {
+      await postReadmes([{ full_name: fullName, readmes }]);
+    } catch (err) {
+      console.warn(`Refresh: readme post failed ${fullName}: ${err.message}`);
+    }
+  }
+
+  const history = await fetchProjectHistory(fullName);
+  const enReadme2 = readmes.find((r) => r.language_code === "en" && !r.is_translated);
+  const zhReadme2 = readmes.find((r) => !r.is_translated && String(r.language_code || "").startsWith("zh"));
+  const sourceForAnalysis = zhReadme2 ? zhReadme2.content_md : (enReadme2 ? enReadme2.content_md : "");
+  const analysis = await analyze(repo, sourceForAnalysis, history, config, {
+    refresh_reasons: project.reasons || [],
+    previous_report_id: project.previous_report_id || null,
+    previous_stars: history?.[0] ? null : null, // analyze itself reads from history; passing reasons is enough
+  });
+  const payload = projectPayload(repo, analysis, {
+    readme_md5: readmeMd5,
+    reasons: project.reasons || [],
+  });
+  await ingest([payload], 1, { mark_refreshed: true });
+  return { ok: true };
+}
+
+async function runRefreshPass(mode, config) {
+  const concurrency = Math.max(1, Math.min(20, Number(process.env.REFRESH_CONCURRENCY || "10")));
+  const pageSize = Math.max(concurrency, Math.min(50, Number(process.env.REFRESH_DUE_PAGE_SIZE || String(concurrency * 2))));
+  const budgetEnv = mode === "refresh_all" ? "REFRESH_ALL_MAX_SECONDS" : "REFRESH_DUE_MAX_SECONDS";
+  const defaultBudget = mode === "refresh_all" ? 18000 : 1200;
+  const maxSeconds = Math.max(60, Number(process.env[budgetEnv] || String(defaultBudget)));
+  const scanLimit = Math.max(50, Math.min(500, Number(process.env.REFRESH_SCAN_LIMIT || "200")));
   const startedAt = Date.now();
   let totalProcessed = 0;
+  let totalSkipped = 0;
+  let cursor = 0;
+  console.log(`Refresh ${mode}: starting (concurrency=${concurrency}, page=${pageSize}, scan=${scanLimit}, budget=${maxSeconds}s)`);
 
   while (true) {
     const elapsed = (Date.now() - startedAt) / 1000;
     if (elapsed >= maxSeconds) {
-      console.log(`Refresh_due: hit time budget ${maxSeconds}s, total_processed=${totalProcessed}`);
+      console.log(`Refresh ${mode}: hit time budget ${maxSeconds}s, total_processed=${totalProcessed}, skipped=${totalSkipped}`);
       break;
     }
-    const queue = await fetchReadmeQueue("refresh_due", pageSize);
-    if (!queue.length) {
-      console.log(`Refresh_due: queue drained, total_processed=${totalProcessed}`);
-      break;
+
+    const url = new URL(deriveReadmeQueueUrl());
+    url.searchParams.set("mode", mode);
+    url.searchParams.set("limit", String(pageSize));
+    url.searchParams.set("cursor", String(cursor));
+    if (mode === "refresh_due") {
+      url.searchParams.set("scan", String(scanLimit));
     }
-    console.log(`Refresh_due: batch of ${queue.length} (elapsed=${Math.round(elapsed)}s, total_processed=${totalProcessed})`);
-
-    for (const project of queue) {
-      if ((Date.now() - startedAt) / 1000 >= maxSeconds) break;
-      try {
-        const fullName = project.full_name;
-        const repo = await repoDetails(fullName);
-        if (!repo) {
-          console.warn(`Refresh_due: repo unavailable ${fullName}`);
-          continue;
-        }
-        repo.source_platform = "backfill";
-        repo.source_tag = "all_projects";
-        repo.source_rank = 0;
-        repo.source_score = scoreRepo(repo);
-
-        const readmes = await collectProjectReadmes(fullName);
-        if (readmes.length) {
-          await postReadmes([{ full_name: fullName, readmes }]);
-        }
-
-        const history = await fetchProjectHistory(fullName);
-        const enReadme = readmes.find((r) => r.language_code === "en" && !r.is_translated);
-        const zhReadme = readmes.find((r) => !r.is_translated && String(r.language_code || "").startsWith("zh"));
-        const sourceForAnalysis = zhReadme ? zhReadme.content_md : (enReadme ? enReadme.content_md : "");
-        const analysis = await analyze(repo, sourceForAnalysis, history, config);
-        await ingest([projectPayload(repo, analysis)], 1, { mark_refreshed: true });
-        totalProcessed++;
-        if (requestDelayMs > 0) await sleep(requestDelayMs);
-      } catch (error) {
-        console.warn(`Refresh_due failed ${project.full_name}: ${error.message}`);
+    let queueData;
+    try {
+      const res = await fetchWithTimeout(url.toString(), {
+        headers: {
+          "Accept": "application/json",
+          "Authorization": `Bearer ${env.ingestToken}`,
+          "User-Agent": "GIR-Discover",
+        },
+      }, 30000);
+      if (!res.ok) {
+        console.warn(`Refresh ${mode} queue ${res.status}: ${await res.text()}`);
+        break;
       }
+      queueData = await res.json();
+    } catch (error) {
+      console.warn(`Refresh ${mode} queue error: ${error.message}`);
+      break;
     }
+
+    const projects = Array.isArray(queueData.projects) ? queueData.projects : [];
+    const scanned = Number(queueData.scanned || projects.length);
+    const skipped = Number(queueData.skipped || 0);
+    const nextCursor = queueData.next_cursor;
+    totalSkipped += skipped;
+
+    if (!projects.length) {
+      if (nextCursor === null || nextCursor === undefined) {
+        console.log(`Refresh ${mode}: scan exhausted, total_processed=${totalProcessed}, skipped=${totalSkipped}`);
+        break;
+      }
+      // No projects matched in this scan window; advance cursor and continue.
+      cursor = Number(nextCursor);
+      continue;
+    }
+
+    console.log(`Refresh ${mode}: batch of ${projects.length} (cursor=${cursor}, scanned=${scanned}, batch_skipped=${skipped}, elapsed=${Math.round(elapsed)}s, total_processed=${totalProcessed})`);
+
+    // Worker-pool style concurrent processing.
+    const queueIter = projects[Symbol.iterator]();
+    const workers = [];
+    for (let i = 0; i < Math.min(concurrency, projects.length); i++) {
+      workers.push((async () => {
+        while (true) {
+          if ((Date.now() - startedAt) / 1000 >= maxSeconds) return;
+          const next = queueIter.next();
+          if (next.done) return;
+          const project = next.value;
+          try {
+            const result = await processSingleRefresh(project, config);
+            if (result && result.ok) {
+              totalProcessed++;
+            } else {
+              console.warn(`Refresh ${mode} failed ${project.full_name}: ${(result && result.error) || "unknown"}`);
+            }
+          } catch (error) {
+            console.warn(`Refresh ${mode} crashed ${project.full_name}: ${error.message}`);
+          }
+        }
+      })());
+    }
+    await Promise.all(workers);
+
+    if (nextCursor === null || nextCursor === undefined) {
+      console.log(`Refresh ${mode}: scan exhausted after batch, total_processed=${totalProcessed}, skipped=${totalSkipped}`);
+      break;
+    }
+    cursor = Number(nextCursor);
   }
 }
 
-async function analyze(repo, readme, history = [], config = defaultConfig) {
+async function runRefreshDuePass(config) {
+  return runRefreshPass("refresh_due", config);
+}
+
+async function runRefreshAllPass(config) {
+  return runRefreshPass("refresh_all", config);
+}
+
+async function analyze(repo, readme, history = [], config = defaultConfig, extras = {}) {
   const res = await fetchWithTimeout(`${env.deepseekBaseUrl.replace(/\/$/, "")}/v1/chat/completions`, {
     method: "POST",
     headers: {
@@ -1487,7 +1605,7 @@ async function analyze(repo, readme, history = [], config = defaultConfig) {
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: systemPrompt(config) },
-        { role: "user", content: userPrompt(repo, readme, history, config) },
+        { role: "user", content: userPrompt(repo, readme, history, config, extras) },
       ],
     }),
   }, 90000);
@@ -1533,7 +1651,7 @@ async function ingest(projects, batchSize = ingestBatchSize, extraPayload = {}) 
   }
 }
 
-function projectPayload(repo, analysis) {
+function projectPayload(repo, analysis, extras = {}) {
   const enriched = typeof analysis === "object" && analysis !== null
     ? {
         ...analysis,
@@ -1541,7 +1659,9 @@ function projectPayload(repo, analysis) {
           stars: Number(repo.stargazers_count || 0),
           forks: Number(repo.forks_count || 0),
           pushed_at: repo.pushed_at || null,
+          readme_md5: extras.readme_md5 || null,
         },
+        refresh_reasons: Array.isArray(extras.reasons) ? extras.reasons : undefined,
       }
     : analysis;
   return {
@@ -1566,6 +1686,11 @@ function projectPayload(repo, analysis) {
 async function main() {
   const config = applyDynamicSearchConfig(applySeedConfig(applyRuntimeOverrides(await loadDiscoverConfig())));
   console.log(`Discover config: mode=${backfillMode ? (backlogPendingOnly ? "backlog" : "backfill") : (seedMode ? "seed" : "normal")}, max=${config.max_projects}, per_page=${config.per_page}, platforms=${config.platforms.join(",")}, topics=${config.topics.join(",")}, extra_queries=${config.extra_queries.length}, report_date=${today}`);
+  if (runType === "refresh_all") {
+    console.log("RUN_TYPE=refresh_all: re-analyzing every project once with the new repo_snapshot schema");
+    await runRefreshAllPass(config);
+    return;
+  }
   if (backfillMode) {
     if (backlogPendingOnly && config.backlog_enabled === false) {
       console.log("Backlog auto-run disabled by config; skipping");
@@ -1596,30 +1721,45 @@ async function main() {
   }
 
   const repos = config.analyze_all ? rankingCandidates : selectProjectsFromBuckets(buckets, config);
+  const concurrency = Math.max(1, Math.min(20, Number(process.env.ANALYZE_CONCURRENCY || "10")));
   let analyzedCount = 0;
-  let analyzedBatch = [];
-  for (const repo of repos) {
-    console.log(`Analyzing ${repo.full_name}`);
+  const analyzedBatch = [];
+  const flushLock = { running: false };
+  const flushIfFull = async () => {
+    if (flushLock.running) return;
+    if (analyzedBatch.length < analysisIngestBatchSize) return;
+    flushLock.running = true;
     try {
-      const history = await fetchProjectHistory(repo.full_name);
-      const readme = await getReadme(repo);
-      const analysis = await analyze(repo, readme, history, config);
-      analyzedBatch.push(projectPayload(repo, analysis));
-      analyzedCount++;
-      if (analyzedBatch.length >= analysisIngestBatchSize) {
-        await ingest(analyzedBatch, analysisIngestBatchSize);
-        analyzedBatch = [];
-      }
-      if (requestDelayMs > 0) {
-        await sleep(requestDelayMs);
-      }
-    } catch (error) {
-      console.error(`Failed ${repo.full_name}: ${error.message}`);
-      if (requestDelayMs > 0) {
-        await sleep(requestDelayMs);
-      }
+      const slice = analyzedBatch.splice(0, analysisIngestBatchSize);
+      await ingest(slice, analysisIngestBatchSize);
+    } finally {
+      flushLock.running = false;
     }
+  };
+
+  const repoIter = repos[Symbol.iterator]();
+  const workers = [];
+  for (let i = 0; i < Math.min(concurrency, repos.length); i++) {
+    workers.push((async () => {
+      while (true) {
+        const next = repoIter.next();
+        if (next.done) return;
+        const repo = next.value;
+        console.log(`Analyzing ${repo.full_name}`);
+        try {
+          const history = await fetchProjectHistory(repo.full_name);
+          const readme = await getReadme(repo);
+          const analysis = await analyze(repo, readme, history, config);
+          analyzedBatch.push(projectPayload(repo, analysis));
+          analyzedCount++;
+          await flushIfFull();
+        } catch (error) {
+          console.error(`Failed ${repo.full_name}: ${error.message}`);
+        }
+      }
+    })());
   }
+  await Promise.all(workers);
   if (analyzedBatch.length) {
     await ingest(analyzedBatch, analysisIngestBatchSize);
   }

@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       run_type:
-        description: "daily, weekly, manual, or backlog"
+        description: "daily, weekly, manual, backlog, or refresh_all"
         required: false
         default: "manual"
       seed_mode:
@@ -101,6 +101,9 @@ jobs:
           README_MAX_BYTES: "40000"
           README_FETCH_MAX_SECONDS: "480"
           README_RECHECK_MAX_SECONDS: "240"
-          REFRESH_DUE_PAGE_SIZE: "3"
-          REFRESH_DUE_MAX_SECONDS: "420"
+          REFRESH_DUE_PAGE_SIZE: "20"
+          REFRESH_DUE_MAX_SECONDS: "1500"
+          REFRESH_CONCURRENCY: "10"
+          REFRESH_SCAN_LIMIT: "200"
+          ANALYZE_CONCURRENCY: "10"
         run: node discover.js
