@@ -1749,7 +1749,17 @@ async function main() {
     await ingest(rankingCandidates.map((repo) => projectPayload(repo, { raw_rank_only: true })), rawIngestBatchSize);
   }
 
-  const repos = config.analyze_all ? rankingCandidates : selectProjectsFromBuckets(buckets, config);
+  const allRepos = config.analyze_all ? rankingCandidates : selectProjectsFromBuckets(buckets, config);
+  // Deduplicate by full_name: same project from multiple platforms should only be analyzed once per run.
+  const seenNames = new Set();
+  const repos = allRepos.filter((repo) => {
+    if (seenNames.has(repo.full_name)) return false;
+    seenNames.add(repo.full_name);
+    return true;
+  });
+  if (allRepos.length !== repos.length) {
+    console.log(`Deduped analyze candidates: ${allRepos.length} -> ${repos.length}`);
+  }
   const concurrency = Math.max(1, Math.min(200, Number(process.env.ANALYZE_CONCURRENCY || "10")));
   let analyzedCount = 0;
   const analyzedBatch = [];
@@ -1768,15 +1778,38 @@ async function main() {
 
   const repoIter = repos[Symbol.iterator]();
   const workers = [];
+  let skippedNoSignal = 0;
   for (let i = 0; i < Math.min(concurrency, repos.length); i++) {
     workers.push((async () => {
       while (true) {
         const next = repoIter.next();
         if (next.done) return;
         const repo = next.value;
-        console.log(`Analyzing ${repo.full_name}`);
         try {
           const history = await fetchProjectHistory(repo.full_name);
+          // Strong-signal check: skip if project was recently analyzed and nothing changed.
+          if (history && history.length > 0) {
+            const prev = history[0];
+            let prevSnap = null;
+            if (prev.raw_ai_json) {
+              try { const p = JSON.parse(prev.raw_ai_json); prevSnap = p?.repo_snapshot; } catch {}
+            }
+            if (prevSnap) {
+              const prevStars = typeof prevSnap.stars === "number" ? prevSnap.stars : null;
+              const prevForks = typeof prevSnap.forks === "number" ? prevSnap.forks : null;
+              const curStars = Number(repo.stargazers_count || 0);
+              const curForks = Number(repo.forks_count || 0);
+              const starDelta = prevStars !== null ? curStars - prevStars : null;
+              const forkDelta = prevForks !== null ? curForks - prevForks : null;
+              const starSignal = starDelta !== null && (starDelta >= 500 || (prevStars > 0 && starDelta >= prevStars * 0.1));
+              const forkSignal = forkDelta !== null && (forkDelta >= 100 || (prevForks > 0 && forkDelta >= prevForks * 0.1));
+              if (!starSignal && !forkSignal) {
+                skippedNoSignal++;
+                continue;
+              }
+            }
+          }
+          console.log(`Analyzing ${repo.full_name}`);
           const readme = await getReadme(repo);
           const analysis = await analyze(repo, readme, history, config);
           analyzedBatch.push(projectPayload(repo, analysis));
@@ -1789,10 +1822,13 @@ async function main() {
     })());
   }
   await Promise.all(workers);
+  if (skippedNoSignal > 0) {
+    console.log(`Skipped ${skippedNoSignal} projects (no strong signal since last analysis)`);
+  }
   if (analyzedBatch.length) {
     await ingest(analyzedBatch, analysisIngestBatchSize);
   }
-  if (!analyzedCount) {
+  if (!analyzedCount && !skippedNoSignal) {
     throw new Error("No projects analyzed");
   }
 }
