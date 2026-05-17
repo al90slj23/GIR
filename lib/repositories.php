@@ -1354,7 +1354,22 @@ function public_gir_progress_summary(?array $latestRunRow, ?array $activeWorkflo
     $pendingNew = max(0, $total - $analyzed);
     $firstAnalysisAt = (string) ($analysisTotals['first_analysis_at'] ?? '');
     $latestAnalysisAt = (string) ($analysisTotals['latest_analysis_at'] ?? '');
-    $percent = $total > 0 ? round(min(100, ($analyzed / $total) * 100), 1) : 0;
+
+    // "Refreshed" = projects that have been re-analyzed with the current schema
+    // (indicated by last_full_refresh_at being set).
+    $refreshed = (int) (db_one(
+        "SELECT COUNT(*) AS n FROM projects WHERE is_hidden = 0 AND last_full_refresh_at IS NOT NULL"
+    )['n'] ?? 0);
+    $pendingRefresh = max(0, $total - $refreshed);
+
+    // Percent: if there are un-refreshed projects, show refresh progress.
+    // Otherwise show first-analysis coverage.
+    $showRefreshProgress = $pendingRefresh > 0 || $refreshed > 0;
+    if ($showRefreshProgress && $refreshed < $total) {
+        $percent = $total > 0 ? round(min(100, ($refreshed / $total) * 100), 1) : 0;
+    } else {
+        $percent = $total > 0 ? round(min(100, ($analyzed / $total) * 100), 1) : 0;
+    }
 
     // Today's activity.
     $todayCount = (int) (db_one(
@@ -1377,7 +1392,7 @@ function public_gir_progress_summary(?array $latestRunRow, ?array $activeWorkflo
     $active = ($latestRunRow && (string) ($latestRunRow['status'] ?? '') === 'started')
         || ($latestAnalysisAt !== '' && time() - (int) strtotime($latestAnalysisAt) <= 20 * 60);
     $pending = null;
-    if (!$active && ($pendingNew > 0 || $pendingSignal > 0) && $activeWorkflowRun) {
+    if (!$active && ($pendingNew > 0 || $pendingRefresh > 0) && $activeWorkflowRun) {
         $workflowStartedAt = (string) (($activeWorkflowRun['started_at'] ?? '') ?: ($activeWorkflowRun['created_at'] ?? ''));
         $workflowTs = $workflowStartedAt !== '' ? (int) strtotime($workflowStartedAt) : 0;
         $latestKnownTs = $latestAnalysisAt !== '' ? (int) strtotime($latestAnalysisAt) : 0;
@@ -1397,7 +1412,7 @@ function public_gir_progress_summary(?array $latestRunRow, ?array $activeWorkflo
         $span = max(1, (int) strtotime($latestAnalysisAt) - (int) strtotime($firstAnalysisAt));
         $recentRate = $analyzed / ($span / 3600.0);
     }
-    $totalPending = $pendingNew + $pendingSignal;
+    $totalPending = $pendingNew + $pendingRefresh;
     $etaSeconds = ($recentRate > 0 && $totalPending > 0) ? (int) ceil($totalPending / ($recentRate / 3600)) : null;
 
     // Recent analyses (last 5).
@@ -1440,7 +1455,9 @@ function public_gir_progress_summary(?array $latestRunRow, ?array $activeWorkflo
         'progress' => [
             'total' => $total,
             'analyzed' => $analyzed,
+            'refreshed' => $refreshed,
             'pending_new' => $pendingNew,
+            'pending_refresh' => $pendingRefresh,
             'pending_signal' => $pendingSignal,
             'today_count' => $todayCount,
             'percent' => $percent,
@@ -1473,6 +1490,7 @@ function public_gir_progress_summary(?array $latestRunRow, ?array $activeWorkflo
             'stats' => [
                 ['label' => '累计解读次数', 'value' => number_format((int) ($reportStats['total_reports'] ?? 0))],
                 ['label' => '已解读项目', 'value' => number_format((int) ($reportStats['projects'] ?? 0))],
+                ['label' => '已刷新项目', 'value' => number_format($refreshed)],
                 ['label' => '解读批次数', 'value' => number_format((int) ($runStats['total_runs'] ?? 0))],
                 ['label' => '自动周期批次', 'value' => number_format((int) ($runStats['auto_runs'] ?? 0))],
                 ['label' => '手动/搜索批次', 'value' => number_format((int) ($runStats['manual_runs'] ?? 0))],
