@@ -1103,7 +1103,7 @@ async function runBackfill(config) {
 
   let analyzedCount = 0;
   const analyzedBatch = [];
-  const concurrency = Math.max(1, Math.min(20, Number(process.env.ANALYZE_CONCURRENCY || "10")));
+  const concurrency = Math.max(1, Math.min(200, Number(process.env.ANALYZE_CONCURRENCY || "10")));
   const flushLock = { running: false };
   const flushIfFull = async () => {
     if (flushLock.running) return;
@@ -1493,8 +1493,8 @@ async function processSingleRefresh(project, config, options = {}) {
 }
 
 async function runRefreshPass(mode, config) {
-  const concurrency = Math.max(1, Math.min(20, Number(process.env.REFRESH_CONCURRENCY || "10")));
-  const pageSize = Math.max(concurrency, Math.min(50, Number(process.env.REFRESH_DUE_PAGE_SIZE || String(concurrency * 2))));
+  const concurrency = Math.max(1, Math.min(200, Number(process.env.REFRESH_CONCURRENCY || "10")));
+  const pageSize = Math.max(concurrency, Math.min(200, Number(process.env.REFRESH_DUE_PAGE_SIZE || String(concurrency * 2))));
   const budgetEnv = mode === "refresh_all" ? "REFRESH_ALL_MAX_SECONDS" : "REFRESH_DUE_MAX_SECONDS";
   const defaultBudget = mode === "refresh_all" ? 18000 : 1200;
   const maxSeconds = Math.max(60, Number(process.env[budgetEnv] || String(defaultBudget)));
@@ -1521,20 +1521,35 @@ async function runRefreshPass(mode, config) {
     }
     let queueData;
     try {
-      const res = await fetchWithTimeout(url.toString(), {
-        headers: {
-          "Accept": "application/json",
-          "Authorization": `Bearer ${env.ingestToken}`,
-          "User-Agent": "GIR-Discover",
-        },
-      }, 30000);
-      if (!res.ok) {
-        console.warn(`Refresh ${mode} queue ${res.status}: ${await res.text()}`);
+      let lastError = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const res = await fetchWithTimeout(url.toString(), {
+            headers: {
+              "Accept": "application/json",
+              "Authorization": `Bearer ${env.ingestToken}`,
+              "User-Agent": "GIR-Discover",
+            },
+          }, 30000);
+          if (!res.ok) {
+            lastError = new Error(`Refresh ${mode} queue ${res.status}: ${await res.text()}`);
+            if (attempt < 2) { await sleep(3000); continue; }
+          } else {
+            queueData = await res.json();
+            lastError = null;
+            break;
+          }
+        } catch (err) {
+          lastError = err;
+          if (attempt < 2) { await sleep(3000); continue; }
+        }
+      }
+      if (lastError) {
+        console.warn(`Refresh ${mode} queue error after retries: ${lastError.message}`);
         break;
       }
-      queueData = await res.json();
     } catch (error) {
-      console.warn(`Refresh ${mode} queue error: ${error.message}`);
+      console.warn(`Refresh ${mode} queue fatal: ${error.message}`);
       break;
     }
 
@@ -1735,7 +1750,7 @@ async function main() {
   }
 
   const repos = config.analyze_all ? rankingCandidates : selectProjectsFromBuckets(buckets, config);
-  const concurrency = Math.max(1, Math.min(20, Number(process.env.ANALYZE_CONCURRENCY || "10")));
+  const concurrency = Math.max(1, Math.min(200, Number(process.env.ANALYZE_CONCURRENCY || "10")));
   let analyzedCount = 0;
   const analyzedBatch = [];
   const flushLock = { running: false };
