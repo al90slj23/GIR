@@ -1580,6 +1580,7 @@ select {
 /* Progress card 5-block sections */
 .progress-section { margin-top: 14px; }
 .progress-section .progress-section-title { font-size: 12px; font-weight: 600; color: var(--muted-color, #94a3b8); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
-.progress-recent-list { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; font-size: 13px; }
-.progress-recent-item { display: flex; justify-content: space-between; gap: 8px; }
-.progress-recent-item em { font-style: normal; color: var(--muted-color, #94a3b8); white-space: nowrap; }
+.progress-recent-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; padding: 10px 12px; background: var(--code-bg, rgba(110, 118, 129, 0.08)); border-radius: 6px; font-size: 13px; }
+.progress-recent-item { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 4px 0; border-bottom: 1px solid var(--border-color, rgba(42, 51, 64, 0.4)); }
+.progress-recent-item:last-child { border-bottom: none; }
+.progress-recent-item em { font-style: normal; color: var(--muted-color, #94a3b8); white-space: nowrap; font-size: 12px; }
