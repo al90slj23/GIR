@@ -155,13 +155,13 @@ if ($mode === 'translate') {
 
             if ($prevStars !== null) {
                 $delta = $currentStars - $prevStars;
-                if ($delta >= 500 || ($prevStars > 0 && $delta >= max(1, $prevStars * 0.1))) {
+                if ($delta >= 2000 || ($prevStars > 0 && $delta >= max(1, $prevStars * 0.2))) {
                     $reasons[] = 'stars_growth:' . $delta . '/' . $prevStars;
                 }
             }
             if ($prevForks !== null) {
                 $delta = $currentForks - $prevForks;
-                if ($delta >= 100 || ($prevForks > 0 && $delta >= max(1, $prevForks * 0.1))) {
+                if ($delta >= 500 || ($prevForks > 0 && $delta >= max(1, $prevForks * 0.2))) {
                     $reasons[] = 'forks_growth:' . $delta . '/' . $prevForks;
                 }
             }

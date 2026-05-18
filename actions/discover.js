@@ -1801,8 +1801,8 @@ async function main() {
               const curForks = Number(repo.forks_count || 0);
               const starDelta = prevStars !== null ? curStars - prevStars : null;
               const forkDelta = prevForks !== null ? curForks - prevForks : null;
-              const starSignal = starDelta !== null && (starDelta >= 500 || (prevStars > 0 && starDelta >= prevStars * 0.1));
-              const forkSignal = forkDelta !== null && (forkDelta >= 100 || (prevForks > 0 && forkDelta >= prevForks * 0.1));
+              const starSignal = starDelta !== null && (starDelta >= 2000 || (prevStars > 0 && starDelta >= prevStars * 0.2));
+              const forkSignal = forkDelta !== null && (forkDelta >= 500 || (prevForks > 0 && forkDelta >= prevForks * 0.2));
               if (!starSignal && !forkSignal) {
                 skippedNoSignal++;
                 continue;
